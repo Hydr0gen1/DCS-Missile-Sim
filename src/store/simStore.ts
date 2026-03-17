@@ -6,6 +6,7 @@ import type { ScenarioConfig, SimFrame, EngagementResult, SimStatus } from '../p
 import type { ManeuverType } from '../physics/aircraft';
 
 export type AppMode = 'tactical' | 'envelope' | 'editor';
+export type ShooterRole = 'aircraft' | 'ground';
 
 interface SimStore {
   // Data
@@ -13,6 +14,7 @@ interface SimStore {
   aircraft: AircraftData[];
 
   // Scenario
+  shooterRole: ShooterRole;
   shooterAircraftId: string;
   shooterAlt: number;
   shooterSpeed: number;
@@ -27,6 +29,8 @@ interface SimStore {
   /** Number of flare salvos available */
   targetFlareCount: number;
   targetWaypoints: Array<{ x: number; y: number }>;
+  /** Derived from the selected target aircraft's hasMaws field */
+  targetHasMaws: boolean;
   rangeNm: number;
   aspectAngleDeg: number;
   selectedMissileId: string;
@@ -66,6 +70,7 @@ interface SimStore {
   setIsPlaying: (v: boolean) => void;
   setPlaybackSpeed: (v: number) => void;
   resetSim: () => void;
+  setShooterRole: (role: ShooterRole) => void;
   setAppMode: (mode: AppMode) => void;
   addTargetWaypoint: (wp: { x: number; y: number }) => void;
   clearTargetWaypoints: () => void;
@@ -76,6 +81,7 @@ export const useSimStore = create<SimStore>((set) => ({
   aircraft: aircraftJson as AircraftData[],
 
   // Default scenario
+  shooterRole: 'aircraft',
   shooterAircraftId: 'f-16',
   shooterAlt: 25000,
   shooterSpeed: 450,
@@ -88,6 +94,7 @@ export const useSimStore = create<SimStore>((set) => ({
   targetChaffCount: 0,
   targetFlareCount: 0,
   targetWaypoints: [],
+  targetHasMaws: false,
   rangeNm: 20,
   aspectAngleDeg: 0,
   selectedMissileId: 'test-round',
@@ -112,7 +119,12 @@ export const useSimStore = create<SimStore>((set) => ({
     set((s) => ({
       missiles: s.missiles.map((m) => (m.id === id ? { ...m, ...patch } : m)),
     })),
-  setScenario: (patch) => set(patch),
+  setScenario: (patch) => set((s) => {
+    const next = { ...s, ...patch };
+    // Keep targetHasMaws in sync with the selected target aircraft
+    next.targetHasMaws = next.aircraft[next.targetAircraftId]?.hasMaws ?? false;
+    return next;
+  }),
   setSimFrames: (frames, result, maxRangeM, minRangeM, nezM, sX, sY) =>
     set({
       simFrames: frames,
@@ -139,6 +151,7 @@ export const useSimStore = create<SimStore>((set) => ({
       simError: null,
       isPlaying: false,
     }),
+  setShooterRole: (role) => set({ shooterRole: role, ...(role === 'ground' ? { shooterSpeed: 0 } : {}) }),
   setAppMode: (mode) => set({ appMode: mode }),
   addTargetWaypoint: (wp) =>
     set((s) => ({ targetWaypoints: [...s.targetWaypoints, wp] })),

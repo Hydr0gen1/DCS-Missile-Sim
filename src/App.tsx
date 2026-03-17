@@ -1,15 +1,27 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useSimStore } from './store/simStore';
 import SetupPanel from './ui/SetupPanel';
 import TacticalDisplay from './ui/TacticalDisplay';
+import TacticalDisplay3D from './ui/TacticalDisplay3D';
+import RWRDisplay from './ui/RWRDisplay';
 import ResultsPanel from './ui/ResultsPanel';
 import PlaybackBar from './ui/PlaybackBar';
 import MissileEditor from './ui/MissileEditor';
 import EnvelopePlot from './ui/EnvelopePlot';
+import SimSummaryModal from './ui/SimSummaryModal';
 
 export default function App() {
-  const { appMode, setAppMode, setIsPlaying, resetSim, setPlaybackSpeed, setCurrentFrameIdx, simFrames, currentFrameIdx, isPlaying } =
+  const { appMode, setAppMode, setIsPlaying, resetSim, setPlaybackSpeed, setCurrentFrameIdx, simFrames, currentFrameIdx, isPlaying, simStatus, simResult } =
     useSimStore();
+  const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
+  const [showSummary, setShowSummary] = useState(false);
+
+  // Auto-open summary when sim completes
+  useEffect(() => {
+    if (simStatus === 'hit' || simStatus === 'miss') {
+      setShowSummary(true);
+    }
+  }, [simStatus]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -56,6 +68,14 @@ export default function App() {
             </button>
           ))}
         </div>
+        {simResult && appMode === 'tactical' && (
+          <button
+            style={{ ...styles.navBtn, borderColor: '#00aa44', color: '#00cc66', marginLeft: 8 }}
+            onClick={() => setShowSummary(true)}
+          >
+            RESULTS
+          </button>
+        )}
         <div style={styles.hint}>SPACE=play/pause  R=reset  +/-=speed</div>
       </div>
 
@@ -65,9 +85,23 @@ export default function App() {
           <>
             <SetupPanel />
             <div style={styles.center}>
-              <TacticalDisplay />
+              {/* 2D / 3D view toggle */}
+              <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                <button
+                  style={{ ...styles.viewBtn, ...(viewMode === '2d' ? styles.viewBtnActive : {}) }}
+                  onClick={() => setViewMode('2d')}
+                >2D</button>
+                <button
+                  style={{ ...styles.viewBtn, ...(viewMode === '3d' ? styles.viewBtnActive : {}) }}
+                  onClick={() => setViewMode('3d')}
+                >3D</button>
+              </div>
+              {viewMode === '2d' ? <TacticalDisplay /> : <TacticalDisplay3D />}
             </div>
-            <ResultsPanel />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              <ResultsPanel />
+              <RWRDisplay />
+            </div>
           </>
         )}
         {appMode === 'envelope' && (
@@ -87,6 +121,9 @@ export default function App() {
 
       {/* Bottom playback bar */}
       {appMode === 'tactical' && <PlaybackBar />}
+
+      {/* Engagement summary modal */}
+      {showSummary && <SimSummaryModal onClose={() => setShowSummary(false)} />}
     </div>
   );
 }
@@ -142,6 +179,21 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#334433',
     fontSize: 9,
     letterSpacing: 1,
+  },
+  viewBtn: {
+    background: 'transparent',
+    border: '1px solid #1a3a1a',
+    color: '#557755',
+    fontFamily: 'Share Tech Mono, monospace',
+    fontSize: 10,
+    padding: '2px 10px',
+    cursor: 'pointer',
+    letterSpacing: 1,
+  },
+  viewBtnActive: {
+    background: '#0d1a0d',
+    borderColor: '#00aa44',
+    color: '#00ff80',
   },
   main: {
     display: 'flex',

@@ -38,8 +38,10 @@ function computeEnvelope(
 export default function EnvelopePlot() {
   const {
     missiles, aircraft,
+    shooterRole,
     shooterAircraftId, shooterAlt, shooterSpeed, shooterHeading,
     targetAircraftId, targetAlt, targetSpeed, targetHeading,
+    targetHasMaws,
     selectedMissileId,
   } = useSimStore();
 
@@ -52,9 +54,10 @@ export default function EnvelopePlot() {
   const envelope = useMemo(() => {
     if (!canPlot || !missile) return null;
     const cfg: Omit<ScenarioConfig, 'aspectAngleDeg' | 'rangeNm'> = {
+      shooterRole,
       shooterType: shooterAircraftId,
       shooterAlt,
-      shooterSpeed,
+      shooterSpeed: shooterRole === 'ground' ? 0 : shooterSpeed,
       shooterHeading,
       targetType: aircraft[targetAircraftId]?.id ?? 'generic',
       targetAlt,
@@ -64,10 +67,11 @@ export default function EnvelopePlot() {
       targetChaffCount: 0,
       targetFlareCount: 0,
       targetWaypoints: [],
+      targetHasMaws,
       missile,
     };
     return computeEnvelope(cfg, aspects, 60);
-  }, [canPlot, missile, shooterAircraftId, shooterAlt, shooterSpeed, shooterHeading, targetAircraftId, targetAlt, targetSpeed, targetHeading, aircraft, aspects]);
+  }, [canPlot, missile, shooterRole, shooterAircraftId, shooterAlt, shooterSpeed, shooterHeading, targetAircraftId, targetAlt, targetSpeed, targetHeading, targetHasMaws, aircraft, aspects]);
 
   const maxR = envelope ? Math.max(...envelope.map((p) => p.rMaxNm), 5) : 50;
 
