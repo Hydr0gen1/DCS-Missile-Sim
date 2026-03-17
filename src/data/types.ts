@@ -33,8 +33,9 @@ export interface AircraftData {
   radarGimbalDeg: number;
   /**
    * True if this aircraft is equipped with a Missile Approach Warning System (MAWS).
-   * MAWS (e.g. AN/AAR-56 on F-16C, AN/AAR-57 on F/A-18C) detects IR/UV missile plumes
+   * In DCS, the A-10C II uses the AN/AAR-47 MAWS, which detects IR/UV missile plumes
    * and provides coarse sector warnings for ALL missile types including IR.
+   * The F-16C and F/A-18C do not have a simulated MAWS in DCS.
    * Standard RWR cannot detect IR missiles — only MAWS can.
    */
   hasMaws: boolean;

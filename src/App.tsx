@@ -8,11 +8,20 @@ import ResultsPanel from './ui/ResultsPanel';
 import PlaybackBar from './ui/PlaybackBar';
 import MissileEditor from './ui/MissileEditor';
 import EnvelopePlot from './ui/EnvelopePlot';
+import SimSummaryModal from './ui/SimSummaryModal';
 
 export default function App() {
-  const { appMode, setAppMode, setIsPlaying, resetSim, setPlaybackSpeed, setCurrentFrameIdx, simFrames, currentFrameIdx, isPlaying } =
+  const { appMode, setAppMode, setIsPlaying, resetSim, setPlaybackSpeed, setCurrentFrameIdx, simFrames, currentFrameIdx, isPlaying, simStatus, simResult } =
     useSimStore();
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
+  const [showSummary, setShowSummary] = useState(false);
+
+  // Auto-open summary when sim completes
+  useEffect(() => {
+    if (simStatus === 'hit' || simStatus === 'miss') {
+      setShowSummary(true);
+    }
+  }, [simStatus]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -59,6 +68,14 @@ export default function App() {
             </button>
           ))}
         </div>
+        {simResult && appMode === 'tactical' && (
+          <button
+            style={{ ...styles.navBtn, borderColor: '#00aa44', color: '#00cc66', marginLeft: 8 }}
+            onClick={() => setShowSummary(true)}
+          >
+            RESULTS
+          </button>
+        )}
         <div style={styles.hint}>SPACE=play/pause  R=reset  +/-=speed</div>
       </div>
 
@@ -104,6 +121,9 @@ export default function App() {
 
       {/* Bottom playback bar */}
       {appMode === 'tactical' && <PlaybackBar />}
+
+      {/* Engagement summary modal */}
+      {showSummary && <SimSummaryModal onClose={() => setShowSummary(false)} />}
     </div>
   );
 }

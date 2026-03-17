@@ -2,7 +2,7 @@
  * Engagement orchestrator — runs the fixed-timestep simulation loop.
  * dt = 0.05s
  */
-import { airDensity, NM_TO_M, M_TO_NM, FT_TO_M } from './atmosphere';
+import { airDensity, speedOfSound, NM_TO_M, M_TO_NM, FT_TO_M } from './atmosphere';
 import { dragForce, createMissileState, estimateMaxRangeM, getMissingFields } from './missile';
 import type { MissileState } from './missile';
 import { proportionalNav, clampAcceleration } from './guidance';
@@ -45,6 +45,7 @@ export interface EngagementResult {
   timeOfFlight: number;     // s
   missDistance: number;     // m
   terminalSpeedMs: number;
+  terminalSpeedMach: number;
   fPoleNm: number;
   aPoleNm: number;
   verdict: string;
@@ -52,6 +53,9 @@ export interface EngagementResult {
   chaffSalvosUsed: number;
   flareSalvosUsed: number;
   seductionEvents: CMEvent[];
+  maxSpeedMach: number;       // peak missile speed in Mach
+  maxGLoad: number;           // peak lateral G-load
+  distanceTraveledNm: number; // total missile path length in nm
 }
 
 export type CMEventType = 'chaff_seduced' | 'flare_seduced' | 'cm_defeated' | 'reacquired';
@@ -179,7 +183,13 @@ export function runSimulation(cfg: ScenarioConfig): {
   const maxTime = 300;
   let time = 0;
 
-  const maxSpeedMs = m.maxSpeed_mach ? m.maxSpeed_mach * 340 : 1500;
+  const maxSpeedMs = m.maxSpeed_mach ? m.maxSpeed_mach * speedOfSound(cfg.shooterAlt) : 1500;
+
+  // Stat tracking for EngagementResult
+  let peakSpeedMs = 0;
+  let altAtPeakSpeed = cfg.shooterAlt;
+  let peakGLoad = 0;
+  let distanceTraveledM = 0;
 
   // Countermeasure state
   let chaffRemaining = cfg.targetChaffCount;
@@ -341,6 +351,9 @@ export function runSimulation(cfg: ScenarioConfig): {
     if (limited && !seduced) {
       missReason = 'insufficient maneuverability';
     }
+    // Track peak lateral G-load from guidance commands
+    const gLoad = Math.sqrt(ax * ax + ay * ay) / G;
+    if (gLoad > peakGLoad) peakGLoad = gLoad;
 
     const burning = time < burnTime;
     const currentMass = burning
@@ -399,6 +412,13 @@ export function runSimulation(cfg: ScenarioConfig): {
       trail: newTrail,
     };
 
+    // Track peak speed and distance traveled
+    distanceTraveledM += newSpeed * DT;
+    if (newSpeed > peakSpeedMs) {
+      peakSpeedMs = newSpeed;
+      altAtPeakSpeed = newAlt;
+    }
+
     shooterState = {
       ...shooterState,
       x: shooterState.x + shooterState.vx * DT,
@@ -449,6 +469,7 @@ export function runSimulation(cfg: ScenarioConfig): {
     timeOfFlight: time,
     missDistance: hitDetected ? 0 : missDistance,
     terminalSpeedMs: lastMissile.speedMs,
+    terminalSpeedMach: lastMissile.speedMs / speedOfSound(lastMissile.altFt),
     fPoleNm,
     aPoleNm,
     verdict,
@@ -456,6 +477,9 @@ export function runSimulation(cfg: ScenarioConfig): {
     chaffSalvosUsed,
     flareSalvosUsed,
     seductionEvents,
+    maxSpeedMach: peakSpeedMs / speedOfSound(altAtPeakSpeed),
+    maxGLoad: peakGLoad,
+    distanceTraveledNm: distanceTraveledM * M_TO_NM,
   };
 
   return { frames, result, maxRangeM, minRangeM, nezM, shooterStartX: shooterX, shooterStartY: shooterY };

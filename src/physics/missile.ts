@@ -1,4 +1,4 @@
-import { airDensity, NM_TO_M, M_TO_NM, FT_TO_M } from './atmosphere';
+import { airDensity, speedOfSound, NM_TO_M, M_TO_NM, FT_TO_M } from './atmosphere';
 import type { MissileData } from '../data/types';
 
 export interface MissileState {
@@ -73,7 +73,7 @@ export function estimateMaxRangeM(m: MissileData, altFt: number): number {
   if (m.maxRange_nm !== null) return m.maxRange_nm * NM_TO_M;
   // Fallback: burn time * max speed (very rough)
   if (m.motorBurnTime_s !== null && m.maxSpeed_mach !== null) {
-    const sos = 340 + altFt * 0.0001; // rough
+    const sos = speedOfSound(altFt);
     return m.motorBurnTime_s * m.maxSpeed_mach * sos * 2;
   }
   return 40 * NM_TO_M; // last resort placeholder
