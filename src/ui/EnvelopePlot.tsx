@@ -61,8 +61,8 @@ export default function EnvelopePlot() {
       targetSpeed,
       targetHeading,
       targetManeuver: 'none',
-      targetChaffFlare: false,
-      targetChaffPkReduction: 0,
+      targetChaffCount: 0,
+      targetFlareCount: 0,
       targetWaypoints: [],
       missile,
     };

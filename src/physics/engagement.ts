@@ -25,8 +25,10 @@ export interface ScenarioConfig {
   targetSpeed: number;      // kts
   targetHeading: number;    // deg
   targetManeuver: ManeuverType;
-  targetChaffFlare: boolean;
-  targetChaffPkReduction: number; // 0–1
+  /** Number of chaff salvos (affects ARH/SARH missiles) */
+  targetChaffCount: number;
+  /** Number of flare salvos (affects IR missiles) */
+  targetFlareCount: number;
   targetWaypoints: Array<{ x: number; y: number }>;
   // Initial geometry
   rangeNm: number;
@@ -45,6 +47,19 @@ export interface EngagementResult {
   aPoleNm: number;
   verdict: string;
   missReason?: string;
+  chaffSalvosUsed: number;
+  flareSalvosUsed: number;
+  seductionEvents: CMEvent[];
+}
+
+export type CMEventType = 'chaff_seduced' | 'flare_seduced' | 'cm_defeated' | 'reacquired';
+
+export interface CMEvent {
+  type: CMEventType;
+  /** Probability that was rolled */
+  probability: number;
+  /** CM type used */
+  cm: 'chaff' | 'flare';
 }
 
 export interface SimFrame {
@@ -56,6 +71,7 @@ export interface SimFrame {
   closingVelocity: number; // m/s
   timeToImpact: number;    // s estimate
   energyFraction: number;  // 0–1
+  cmEvent?: CMEvent;       // countermeasure event at this frame (if any)
 }
 
 export type SimStatus = 'idle' | 'running' | 'hit' | 'miss' | 'error';
@@ -128,7 +144,7 @@ export function runSimulation(cfg: ScenarioConfig): {
   let targetState = createAircraftState(
     targetX, targetY,
     cfg.targetSpeed, cfg.targetHeading, cfg.targetAlt,
-    cfg.targetManeuver, cfg.targetChaffFlare, cfg.targetChaffPkReduction,
+    cfg.targetManeuver, false, 0,
     cfg.targetWaypoints,
   );
 
@@ -153,24 +169,50 @@ export function runSimulation(cfg: ScenarioConfig): {
   const navN = m.guidanceNav ?? 4;
   const seekerRangeM = (m.seekerAcquisitionRange_nm ?? 10) * NM_TO_M;
   const loftAngle = m.loftAngle_deg ?? 0;
+  // ccm_k0: lower = more resistant to CM. null treated as 0.3 (moderate).
+  const ccmK0 = m.ccm_k0 ?? 0.3;
 
-  const maxTime = 300; // simulation time cap (s)
+  const maxTime = 300;
   let time = 0;
-  let prevMissileX = missileState.x;
-  let prevMissileY = missileState.y;
 
-  // Initial max speed estimate for energy tracking
   const maxSpeedMs = m.maxSpeed_mach ? m.maxSpeed_mach * 340 : 1500;
 
+  // Countermeasure state
+  let chaffRemaining = cfg.targetChaffCount;
+  let flareRemaining = cfg.targetFlareCount;
+  let lastCmDispenseTime = -999; // last time a CM salvo was dispensed
+  const CM_INTERVAL = 2.0;       // seconds between salvos
+  // Seduction state
+  let seduced = false;
+  let seductionEndTime = 0;
+  // Last known target position (missile flies to this when seduced)
+  let lastKnownTargetX = targetX;
+  let lastKnownTargetY = targetY;
+  const seductionEvents: CMEvent[] = [];
+  let chaffSalvosUsed = 0;
+  let flareSalvosUsed = 0;
+
+  // Simple deterministic RNG seeded by scenario params (avoids Math.random unpredictability)
+  let rngState = (cfg.rangeNm * 1000 + cfg.aspectAngleDeg * 17 + cfg.shooterAlt + cfg.targetAlt) | 0;
+  function nextRng(): number {
+    rngState = (rngState * 1664525 + 1013904223) & 0xffffffff;
+    return (rngState >>> 0) / 0xffffffff;
+  }
+
   while (time < maxTime) {
-    // Step target
     const newTarget = stepAircraft(
       targetState, DT,
       missileState.x, missileState.y,
       missileState.active,
     );
 
-    // Check seeker activation
+    // Track last known target position when seeker is active
+    if (missileState.active && !seduced) {
+      lastKnownTargetX = newTarget.x;
+      lastKnownTargetY = newTarget.y;
+    }
+
+    // --- Seeker activation ---
     const dxSk = newTarget.x - missileState.x;
     const dySk = newTarget.y - missileState.y;
     const rangeSk = Math.sqrt(dxSk * dxSk + dySk * dySk);
@@ -184,52 +226,125 @@ export function runSimulation(cfg: ScenarioConfig): {
         activeRecorded = true;
       }
     }
-    // SARH always active once launched (shooter illuminates)
     if (m.type === 'SARH' && !missileState.active) {
       missileState = { ...missileState, active: true };
+      if (!activeRecorded) {
+        aPoleNm = cfg.rangeNm;
+        activeRecorded = true;
+      }
     }
 
-    // Proportional nav guidance
+    // --- Countermeasure dispensing & seduction check ---
+    let cmEventThisFrame: CMEvent | undefined;
+
+    if (missileState.active && !seduced && time - lastCmDispenseTime >= CM_INTERVAL) {
+      const isIR = m.type === 'IR';
+      const isRadar = m.type === 'ARH' || m.type === 'SARH';
+
+      if (isIR && flareRemaining > 0) {
+        // Flare seduction check
+        // Base P per salvo for flares: 0.35 (DCS community tests: 1-2 salvos give ~30-40% defeat)
+        // SARH chaff has extra aspect penalty (only works in notch), but IR flares work regardless
+        const pSeduced = Math.min(0.92, 0.35 * ccmK0);
+        const roll = nextRng();
+        flareRemaining--;
+        flareSalvosUsed++;
+        lastCmDispenseTime = time;
+
+        if (roll < pSeduced) {
+          seduced = true;
+          seductionEndTime = time + 2.0 + nextRng() * 2.0; // 2–4s seduced window
+          cmEventThisFrame = { type: 'flare_seduced', probability: pSeduced, cm: 'flare' };
+          seductionEvents.push(cmEventThisFrame);
+        } else {
+          cmEventThisFrame = { type: 'cm_defeated', probability: pSeduced, cm: 'flare' };
+        }
+      } else if (isRadar && chaffRemaining > 0) {
+        // Chaff seduction check
+        // Base P per salvo: 0.25 for ARH, higher for SARH (0.35)
+        // SARH is more susceptible to chaff (breaks CW illumination lock)
+        // Additional notch aspect bonus: if target is roughly beaming the missile (+/- 30°),
+        // chaff is more effective against SARH (doppler notch + chaff cloud overlap)
+        const basePChaff = m.type === 'SARH' ? 0.35 : 0.25;
+        let aspectBonus = 1.0;
+        if (m.type === 'SARH') {
+          // Check if target is in notch aspect relative to missile
+          const missileAngle = Math.atan2(
+            missileState.x - newTarget.x,
+            missileState.y - newTarget.y,
+          );
+          const targetHeadRad = (newTarget.headingDeg * Math.PI) / 180;
+          const aspectDiff = Math.abs(normalizeAngleRad(targetHeadRad - missileAngle));
+          // Within 30° of 90° (beam aspect) = notch
+          if (Math.abs(aspectDiff - Math.PI / 2) < (30 * Math.PI / 180)) {
+            aspectBonus = 1.8; // notch + chaff very effective vs SARH
+          }
+        }
+        const pSeduced = Math.min(0.88, basePChaff * ccmK0 * aspectBonus);
+        const roll = nextRng();
+        chaffRemaining--;
+        chaffSalvosUsed++;
+        lastCmDispenseTime = time;
+
+        if (roll < pSeduced) {
+          seduced = true;
+          seductionEndTime = time + 1.5 + nextRng() * 2.5; // 1.5–4s seduced window
+          cmEventThisFrame = { type: 'chaff_seduced', probability: pSeduced, cm: 'chaff' };
+          seductionEvents.push(cmEventThisFrame);
+        } else {
+          cmEventThisFrame = { type: 'cm_defeated', probability: pSeduced, cm: 'chaff' };
+        }
+      }
+    }
+
+    // --- Re-acquisition after seduction ---
+    if (seduced && time >= seductionEndTime && rangeSk <= seekerRangeM * 1.5) {
+      seduced = false;
+      cmEventThisFrame = { type: 'reacquired', probability: 1.0, cm: missileState.active ? 'chaff' : 'flare' };
+    }
+
+    // Seduced missile homes on last known position (or flies blind)
+    const guidanceTargetX = seduced ? lastKnownTargetX : newTarget.x;
+    const guidanceTargetY = seduced ? lastKnownTargetY : newTarget.y;
+
+    // Proportional nav
     const guidOut = proportionalNav({
       mx: missileState.x, my: missileState.y,
       mvx: missileState.vx, mvy: missileState.vy,
-      tx: newTarget.x, ty: newTarget.y,
-      tvx: newTarget.vx, tvy: newTarget.vy,
+      tx: guidanceTargetX, ty: guidanceTargetY,
+      tvx: seduced ? 0 : newTarget.vx,
+      tvy: seduced ? 0 : newTarget.vy,
       navConst: navN,
     });
 
-    const { range, closingVelocity } = guidOut;
+    const { range, closingVelocity } = seduced
+      ? { range: Math.sqrt(dxSk * dxSk + dySk * dySk), closingVelocity: 0 }
+      : guidOut;
 
-    // Hit detection
-    const hitRadius = 20; // m — proximity fuse
-    if (range < hitRadius) {
+    // Hit detection (only when not seduced)
+    if (!seduced && range < 20) {
       hitDetected = true;
-      // Compute F-pole
       const fdx = shooterState.x - newTarget.x;
       const fdy = shooterState.y - newTarget.y;
       fPoleNm = Math.sqrt(fdx * fdx + fdy * fdy) * M_TO_NM;
       if (!activeRecorded) aPoleNm = fPoleNm;
-      frames.push(buildFrame(time, missileState, shooterState, newTarget, range, closingVelocity, maxSpeedMs));
+      frames.push(buildFrame(time, missileState, shooterState, newTarget, range, closingVelocity, maxSpeedMs, cmEventThisFrame));
       break;
     }
 
-    // Limit guidance acceleration to missile G limit
     let { ax, ay, limited } = clampAcceleration(guidOut.ax, guidOut.ay, gLimit, missileState.speedMs);
-    if (limited) {
+    if (limited && !seduced) {
       missReason = 'insufficient maneuverability';
     }
 
-    // Propulsion
     const burning = time < burnTime;
     const currentMass = burning
       ? mass - (mass - massBurnout) * (time / burnTime)
       : massBurnout;
     const thrustForce = burning ? thrust : 0;
 
-    // Drag
     const fdrag = dragForce(missileState.speedMs, missileState.altFt, cd, area);
 
-    // Net acceleration in direction of velocity
     const speed = missileState.speedMs > 0 ? missileState.speedMs : 0.001;
     const vHatX = missileState.vx / speed;
     const vHatY = missileState.vy / speed;
@@ -239,7 +354,6 @@ export function runSimulation(cfg: ScenarioConfig): {
     const dragAccX = -(fdrag / currentMass) * vHatX;
     const dragAccY = -(fdrag / currentMass) * vHatY;
 
-    // Loft: add vertical altitude change (simplified — affects alt only)
     let altDeltaFt = 0;
     if (burning && loftAngle > 0 && range > 0.6 * maxRangeM) {
       const vertMs = missileState.speedMs * Math.sin((loftAngle * Math.PI) / 180);
@@ -250,23 +364,19 @@ export function runSimulation(cfg: ScenarioConfig): {
     const newVy = missileState.vy + (ay + thrustAccY + dragAccY) * DT;
     const newSpeed = Math.sqrt(newVx * newVx + newVy * newVy);
     const newAlt = Math.max(0, missileState.altFt + altDeltaFt);
-
-    // Energy: normalized relative to max speed
     const energyFrac = Math.min(1, newSpeed / maxSpeedMs);
 
-    // Missile ran out of energy
     if (newSpeed < 50) {
       missReason = 'insufficient energy';
       const fdx = shooterState.x - newTarget.x;
       const fdy = shooterState.y - newTarget.y;
       fPoleNm = Math.sqrt(fdx * fdx + fdy * fdy) * M_TO_NM;
       if (!activeRecorded) aPoleNm = fPoleNm;
-      frames.push(buildFrame(time, missileState, shooterState, newTarget, range, closingVelocity, maxSpeedMs));
+      frames.push(buildFrame(time, missileState, shooterState, newTarget, range, closingVelocity, maxSpeedMs, cmEventThisFrame));
       break;
     }
 
     const newTrail = [...missileState.trail, { x: missileState.x, y: missileState.y }];
-    // Cap trail length
     if (newTrail.length > 500) newTrail.shift();
 
     missileState = {
@@ -283,7 +393,6 @@ export function runSimulation(cfg: ScenarioConfig): {
       trail: newTrail,
     };
 
-    // Step shooter forward (straight and level for now)
     shooterState = {
       ...shooterState,
       x: shooterState.x + shooterState.vx * DT,
@@ -293,8 +402,7 @@ export function runSimulation(cfg: ScenarioConfig): {
     targetState = newTarget;
     time += DT;
 
-    const tti = closingVelocity > 0 ? range / closingVelocity : 9999;
-    frames.push(buildFrame(time, missileState, shooterState, targetState, range, closingVelocity, maxSpeedMs));
+    frames.push(buildFrame(time, missileState, shooterState, targetState, range, closingVelocity, maxSpeedMs, cmEventThisFrame));
   }
 
   if (time >= maxTime && !hitDetected) {
@@ -305,22 +413,24 @@ export function runSimulation(cfg: ScenarioConfig): {
     if (!activeRecorded) aPoleNm = fPoleNm;
   }
 
-  // Compute final miss distance
+  // If seduced at end of engagement, that's a miss
+  if (seduced && !hitDetected && !missReason) {
+    missReason = seductionEvents[0]?.cm === 'flare' ? 'defeated by flares' : 'defeated by chaff';
+  }
+
   const lastMissile = missileState;
   const mdx = lastMissile.x - targetState.x;
   const mdy = lastMissile.y - targetState.y;
   const missDistance = Math.sqrt(mdx * mdx + mdy * mdy);
 
-  // Pk estimation
   const pk = computePk({
     hit: hitDetected,
     missDistance,
     terminalSpeedMs: lastMissile.speedMs,
     targetManeuver: cfg.targetManeuver,
-    chaffFlare: cfg.targetChaffFlare,
-    chaffPkReduction: cfg.targetChaffPkReduction,
     missileType: m.type,
     gLimit,
+    seduced,
     closingVelocity: frames.length > 0 ? frames[frames.length - 1].closingVelocity : 0,
   });
 
@@ -336,6 +446,9 @@ export function runSimulation(cfg: ScenarioConfig): {
     aPoleNm,
     verdict,
     missReason: hitDetected ? undefined : missReason,
+    chaffSalvosUsed,
+    flareSalvosUsed,
+    seductionEvents,
   };
 
   return { frames, result, maxRangeM, minRangeM, nezM, shooterStartX: shooterX, shooterStartY: shooterY };
@@ -349,6 +462,7 @@ function buildFrame(
   range: number,
   cv: number,
   maxSpeedMs: number,
+  cmEvent?: CMEvent,
 ): SimFrame {
   const tti = cv > 0 ? range / cv : 9999;
   return {
@@ -360,6 +474,7 @@ function buildFrame(
     closingVelocity: cv,
     timeToImpact: tti,
     energyFraction: missile.energy,
+    cmEvent,
   };
 }
 
@@ -368,34 +483,44 @@ interface PkInput {
   missDistance: number;
   terminalSpeedMs: number;
   targetManeuver: ManeuverType;
-  chaffFlare: boolean;
-  chaffPkReduction: number;
   missileType: string;
   gLimit: number;
+  seduced: boolean;
   closingVelocity: number;
 }
 
 function computePk(i: PkInput): number {
+  if (i.seduced) return 0;
   if (i.hit && i.terminalSpeedMs > 200) {
     let pk = 0.95;
     if (i.targetManeuver === 'break') pk *= 0.75;
-    else if (i.targetManeuver === 'notch') pk *= 0.65;
-    else if (i.targetManeuver === 'crank') pk *= 0.85;
-    if (i.chaffFlare) pk *= (1 - i.chaffPkReduction);
-    // look-down/shoot-down not modeled in 2D; placeholder -5%
+    else if (i.targetManeuver === 'notch') {
+      // Notch is most effective vs radar seekers
+      if (i.missileType === 'SARH') pk *= 0.5;
+      else if (i.missileType === 'ARH') pk *= 0.7;
+      else pk *= 0.85;
+    }
+    else if (i.targetManeuver === 'crank') pk *= 0.88;
     return Math.max(0, Math.min(1, pk));
   }
   if (i.hit && i.terminalSpeedMs <= 200) return 0.3;
-  // Near miss
   if (i.missDistance < 50) return 0.4;
   if (i.missDistance < 200) return 0.1;
   return 0;
+}
+
+function normalizeAngleRad(a: number): number {
+  while (a > Math.PI) a -= 2 * Math.PI;
+  while (a < -Math.PI) a += 2 * Math.PI;
+  return a;
 }
 
 function buildVerdict(pk: number, hit: boolean, missReason: string): string {
   if (!hit) {
     if (missReason === 'insufficient energy') return 'Miss — insufficient energy';
     if (missReason === 'insufficient maneuverability') return 'Miss — defeated by maneuver';
+    if (missReason === 'defeated by flares') return 'Miss — seduced by flares';
+    if (missReason === 'defeated by chaff') return 'Miss — seduced by chaff';
     if (missReason === 'timeout') return 'Miss — engagement timeout';
     return `Miss — ${missReason || 'unknown'}`;
   }

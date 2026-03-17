@@ -1,5 +1,6 @@
 import { useSimStore } from '../store/simStore';
 import { M_TO_NM } from '../physics/atmosphere';
+import type { CMEvent } from '../physics/engagement';
 
 export default function ResultsPanel() {
   const { simResult, simError, simStatus, simFrames, currentFrameIdx } = useSimStore();
@@ -36,6 +37,7 @@ export default function ResultsPanel() {
           } />
           <Row label="SEEKER" value={frame.missile.active ? <span style={{ color: '#00ff80' }}>ACTIVE</span> : 'SILENT'} />
           <Row label="MOTOR" value={frame.missile.motorBurning ? <span style={{ color: '#ffaa00' }}>BURNING</span> : 'COAST'} />
+          {frame.cmEvent && <CMEventBadge event={frame.cmEvent} />}
         </div>
       )}
 
@@ -58,12 +60,42 @@ export default function ResultsPanel() {
           )}
           <Row label="F-POLE" value={`${simResult.fPoleNm.toFixed(1)} nm`} />
           <Row label="A-POLE" value={`${simResult.aPoleNm.toFixed(1)} nm`} />
+          {simResult.chaffSalvosUsed > 0 && (
+            <Row label="CHAFF" value={<span style={{ color: '#00aaff' }}>{simResult.chaffSalvosUsed} salvos</span>} />
+          )}
+          {simResult.flareSalvosUsed > 0 && (
+            <Row label="FLARES" value={<span style={{ color: '#ff8800' }}>{simResult.flareSalvosUsed} salvos</span>} />
+          )}
+          {simResult.seductionEvents.length > 0 && (
+            <div style={{ marginTop: 4 }}>
+              {simResult.seductionEvents.map((ev, i) => (
+                <CMEventBadge key={i} event={ev} />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       {simStatus === 'idle' && !simResult && (
         <div style={styles.idle}>Configure scenario and press LAUNCH to run engagement.</div>
       )}
+    </div>
+  );
+}
+
+function CMEventBadge({ event }: { event: CMEvent }) {
+  const color =
+    event.type === 'flare_seduced' ? '#ff8800' :
+    event.type === 'chaff_seduced' ? '#00aaff' :
+    event.type === 'reacquired' ? '#00ff80' : '#888888';
+  const label =
+    event.type === 'flare_seduced' ? `FLARE SEDUCED (P=${(event.probability * 100).toFixed(0)}%)` :
+    event.type === 'chaff_seduced' ? `CHAFF SEDUCED (P=${(event.probability * 100).toFixed(0)}%)` :
+    event.type === 'reacquired' ? 'REACQUIRED' :
+    `CM DEFEATED (P=${(event.probability * 100).toFixed(0)}%)`;
+  return (
+    <div style={{ color, fontSize: 9, fontWeight: 'bold', marginBottom: 2, letterSpacing: 1 }}>
+      ▶ {label}
     </div>
   );
 }

@@ -12,7 +12,7 @@ export default function SetupPanel() {
     aircraft, missiles,
     shooterAircraftId, shooterAlt, shooterSpeed, shooterHeading,
     targetAircraftId, targetAlt, targetSpeed, targetHeading,
-    targetManeuver, targetChaffFlare, targetChaffPkReduction,
+    targetManeuver, targetChaffCount, targetFlareCount,
     rangeNm, aspectAngleDeg, selectedMissileId,
     setScenario,
   } = store;
@@ -90,25 +90,33 @@ export default function SetupPanel() {
           <option value="custom">Custom Waypoints (click map)</option>
         </select>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
-          <input
-            type="checkbox"
-            id="chaff"
-            checked={targetChaffFlare}
-            onChange={(e) => setScenario({ targetChaffFlare: e.target.checked })}
-          />
-          <label htmlFor="chaff" title="Target deploys chaff/flares, reducing Pk" style={styles.label}>
-            Chaff/Flares
-          </label>
+        <div style={styles.cmBox}>
+          <div style={styles.cmTitle}>COUNTERMEASURES</div>
+          {label(
+            `Chaff salvos: ${targetChaffCount}`,
+            'Chaff bundles dispensed against radar-guided missiles (ARH/SARH). Each salvo is one burst. Effectiveness depends on missile ccm_k0 — lower ccm_k0 = more resistant.',
+          )}
+          <input type="range" min={0} max={30} step={1} value={targetChaffCount}
+            onChange={(e) => setScenario({ targetChaffCount: +e.target.value })}
+            style={{ ...styles.slider, accentColor: '#00aaff' }} />
+          <div style={styles.cmHint}>→ ARH / SARH missiles only</div>
+
+          {label(
+            `Flare salvos: ${targetFlareCount}`,
+            'Flares dispensed against IR-guided missiles (AIM-9X, R-73). Effectiveness depends on missile ccm_k0. AIM-9X Block II imaging seeker (ccm_k0=0.1) is nearly flare-immune.',
+          )}
+          <input type="range" min={0} max={30} step={1} value={targetFlareCount}
+            onChange={(e) => setScenario({ targetFlareCount: +e.target.value })}
+            style={{ ...styles.slider, accentColor: '#ff8800' }} />
+          <div style={styles.cmHint}>→ IR missiles only</div>
+
+          {selectedMissile && (selectedMissile.ccm_k0 !== null && selectedMissile.ccm_k0 !== undefined) && (
+            <div style={styles.ccmInfo}>
+              {selectedMissile.name} ccm_k0: {selectedMissile.ccm_k0}
+              {' '}({ccmLabel(selectedMissile.ccm_k0)})
+            </div>
+          )}
         </div>
-        {targetChaffFlare && (
-          <>
-            {label(`Pk Reduction: ${(targetChaffPkReduction * 100).toFixed(0)}%`, 'How much chaff/flares reduce Pk')}
-            <input type="range" min={0} max={0.9} step={0.05} value={targetChaffPkReduction}
-              onChange={(e) => setScenario({ targetChaffPkReduction: +e.target.value })}
-              style={styles.slider} />
-          </>
-        )}
       </div>
 
       <div style={styles.section}>
@@ -171,6 +179,13 @@ function aspectLabel(deg: number): string {
   if (deg <= 110) return 'BEAM';
   if (deg <= 160) return 'FLANKING';
   return 'COLD';
+}
+
+function ccmLabel(k: number): string {
+  if (k <= 0.15) return 'CM-resistant';
+  if (k <= 0.35) return 'Moderate resistance';
+  if (k <= 0.6) return 'Susceptible';
+  return 'Highly susceptible';
 }
 
 function typeColor(type: string): string {
@@ -251,5 +266,30 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.6,
     borderLeft: '2px solid #1a3a1a',
     paddingLeft: 6,
+  },
+  cmBox: {
+    marginTop: 8,
+    padding: '6px 8px',
+    border: '1px solid #1a2a1a',
+    background: '#060e06',
+  },
+  cmTitle: {
+    color: '#557755',
+    fontSize: 9,
+    letterSpacing: 2,
+    marginBottom: 4,
+  },
+  cmHint: {
+    color: '#446644',
+    fontSize: 9,
+    marginBottom: 4,
+    marginLeft: 2,
+  },
+  ccmInfo: {
+    marginTop: 4,
+    color: '#888866',
+    fontSize: 9,
+    borderTop: '1px solid #1a2a1a',
+    paddingTop: 4,
   },
 };

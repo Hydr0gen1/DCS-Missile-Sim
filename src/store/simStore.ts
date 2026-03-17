@@ -22,8 +22,10 @@ interface SimStore {
   targetSpeed: number;
   targetHeading: number;
   targetManeuver: ManeuverType;
-  targetChaffFlare: boolean;
-  targetChaffPkReduction: number;
+  /** Number of chaff salvos available (each salvo = one burst of chaff bundles) */
+  targetChaffCount: number;
+  /** Number of flare salvos available */
+  targetFlareCount: number;
   targetWaypoints: Array<{ x: number; y: number }>;
   rangeNm: number;
   aspectAngleDeg: number;
@@ -83,8 +85,8 @@ export const useSimStore = create<SimStore>((set) => ({
   targetSpeed: 450,
   targetHeading: 180,
   targetManeuver: 'none',
-  targetChaffFlare: false,
-  targetChaffPkReduction: 0.3,
+  targetChaffCount: 0,
+  targetFlareCount: 0,
   targetWaypoints: [],
   rangeNm: 20,
   aspectAngleDeg: 0,

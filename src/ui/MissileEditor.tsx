@@ -5,7 +5,7 @@ import { getMissingFields } from '../physics/missile';
 
 type NullableNumKey = {
   [K in keyof MissileData]: MissileData[K] extends number | null ? K : never;
-}[keyof MissileData];
+}[keyof MissileData] & string;
 
 const FIELDS: Array<{ key: NullableNumKey; label: string; unit: string; tip: string }> = [
   { key: 'motorBurnTime_s',         label: 'Motor Burn Time',     unit: 's',   tip: 'Duration of motor burn in seconds' },
@@ -20,6 +20,7 @@ const FIELDS: Array<{ key: NullableNumKey; label: string; unit: string; tip: str
   { key: 'seekerAcquisitionRange_nm', label: 'Seeker Acq Range',  unit: 'nm',  tip: 'Range at which seeker activates or locks' },
   { key: 'loftAngle_deg',           label: 'Loft Angle',          unit: '°',   tip: 'Pitch-up angle during loft phase (0 = no loft)' },
   { key: 'guidanceNav',             label: 'ProNav Constant (N)', unit: '',    tip: 'Proportional navigation constant, typically 3–5' },
+  { key: 'ccm_k0',                  label: 'CM Vulnerability (ccm_k0)', unit: '', tip: 'DCS ccm_k0: lower = more resistant to countermeasures. IR: flare resist. Radar: chaff resist. AIM-9X≈0.1, R-77≈0.2, AIM-7≈0.55, R-73≈0.75.' },
 ];
 
 export default function MissileEditor() {
@@ -134,7 +135,7 @@ export default function MissileEditor() {
       {/* Numeric fields */}
       {FIELDS.map(({ key, label, unit, tip }) => {
         const val = (selected as unknown as Record<string, unknown>)[key as string] as number | null;
-        const isRequired = ['motorBurnTime_s','thrust_N','mass_kg','massBurnout_kg','dragCoefficient','referenceArea_m2','guidanceNav'].includes(key as string);
+        const isRequired = ['motorBurnTime_s','thrust_N','mass_kg','massBurnout_kg','dragCoefficient','referenceArea_m2','guidanceNav'].includes(key);
         const isEmpty = val === null;
         return (
           <div key={key} style={styles.row} title={tip}>

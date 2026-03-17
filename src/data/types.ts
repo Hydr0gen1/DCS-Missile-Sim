@@ -15,6 +15,12 @@ export interface MissileData {
   seekerAcquisitionRange_nm: number | null;
   loftAngle_deg: number | null;
   guidanceNav: number | null;
+  /**
+   * Countermeasure vulnerability factor (DCS ccm_k0).
+   * Lower = more resistant. IR missiles: flare susceptibility. Radar: chaff susceptibility.
+   * Sourced from DCS Lua datamine where available.
+   */
+  ccm_k0: number | null;
   /** True if this is a synthetic test round, not a real weapon */
   isSynthetic?: boolean;
 }
