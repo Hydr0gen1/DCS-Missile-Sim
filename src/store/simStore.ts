@@ -71,6 +71,8 @@ interface SimStore {
   setPlaybackSpeed: (v: number) => void;
   resetSim: () => void;
   setShooterRole: (role: ShooterRole) => void;
+  addMissile: (m: MissileData) => void;
+  deleteMissile: (id: string) => void;
   setAppMode: (mode: AppMode) => void;
   addTargetWaypoint: (wp: { x: number; y: number }) => void;
   clearTargetWaypoints: () => void;
@@ -152,6 +154,15 @@ export const useSimStore = create<SimStore>((set) => ({
       isPlaying: false,
     }),
   setShooterRole: (role) => set({ shooterRole: role, ...(role === 'ground' ? { shooterSpeed: 0 } : {}) }),
+  addMissile: (m) => set((s) => ({ missiles: [...s.missiles, m] })),
+  deleteMissile: (id) =>
+    set((s) => ({
+      missiles: s.missiles.filter((m) => m.id !== id),
+      selectedMissileId:
+        s.selectedMissileId === id
+          ? (s.missiles.find((m) => m.id !== id)?.id ?? s.selectedMissileId)
+          : s.selectedMissileId,
+    })),
   setAppMode: (mode) => set({ appMode: mode }),
   addTargetWaypoint: (wp) =>
     set((s) => ({ targetWaypoints: [...s.targetWaypoints, wp] })),
