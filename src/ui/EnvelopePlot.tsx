@@ -40,6 +40,7 @@ export default function EnvelopePlot() {
     missiles, aircraft,
     shooterAircraftId, shooterAlt, shooterSpeed, shooterHeading,
     targetAircraftId, targetAlt, targetSpeed, targetHeading,
+    targetHasMaws,
     selectedMissileId,
   } = useSimStore();
 
@@ -64,10 +65,11 @@ export default function EnvelopePlot() {
       targetChaffCount: 0,
       targetFlareCount: 0,
       targetWaypoints: [],
+      targetHasMaws,
       missile,
     };
     return computeEnvelope(cfg, aspects, 60);
-  }, [canPlot, missile, shooterAircraftId, shooterAlt, shooterSpeed, shooterHeading, targetAircraftId, targetAlt, targetSpeed, targetHeading, aircraft, aspects]);
+  }, [canPlot, missile, shooterAircraftId, shooterAlt, shooterSpeed, shooterHeading, targetAircraftId, targetAlt, targetSpeed, targetHeading, targetHasMaws, aircraft, aspects]);
 
   const maxR = envelope ? Math.max(...envelope.map((p) => p.rMaxNm), 5) : 50;
 

@@ -1,10 +1,10 @@
 [
-  { "id": "f-16",      "name": "F-16C",       "maxSpeedKts": 1319, "ceilingFt": 50000, "radarGimbalDeg": 60 },
-  { "id": "fa-18",     "name": "F/A-18C",     "maxSpeedKts": 1034, "ceilingFt": 50000, "radarGimbalDeg": 70 },
-  { "id": "f-15",      "name": "F-15C",       "maxSpeedKts": 1433, "ceilingFt": 65000, "radarGimbalDeg": 60 },
-  { "id": "su-27",     "name": "Su-27",       "maxSpeedKts": 1350, "ceilingFt": 59055, "radarGimbalDeg": 70 },
-  { "id": "mig-29",    "name": "MiG-29",      "maxSpeedKts": 1520, "ceilingFt": 59055, "radarGimbalDeg": 60 },
-  { "id": "jf-17",     "name": "JF-17",       "maxSpeedKts": 1100, "ceilingFt": 54000, "radarGimbalDeg": 60 },
-  { "id": "mirage",    "name": "Mirage 2000", "maxSpeedKts": 1453, "ceilingFt": 59000, "radarGimbalDeg": 60 },
-  { "id": "generic",   "name": "Generic",     "maxSpeedKts": 1000, "ceilingFt": 50000, "radarGimbalDeg": 60 }
+  { "id": "f-16",      "name": "F-16C",       "maxSpeedKts": 1319, "ceilingFt": 50000, "radarGimbalDeg": 60, "hasMaws": true  },
+  { "id": "fa-18",     "name": "F/A-18C",     "maxSpeedKts": 1034, "ceilingFt": 50000, "radarGimbalDeg": 70, "hasMaws": true  },
+  { "id": "f-15",      "name": "F-15C",       "maxSpeedKts": 1433, "ceilingFt": 65000, "radarGimbalDeg": 60, "hasMaws": false },
+  { "id": "su-27",     "name": "Su-27",       "maxSpeedKts": 1350, "ceilingFt": 59055, "radarGimbalDeg": 70, "hasMaws": false },
+  { "id": "mig-29",    "name": "MiG-29",      "maxSpeedKts": 1520, "ceilingFt": 59055, "radarGimbalDeg": 60, "hasMaws": false },
+  { "id": "jf-17",     "name": "JF-17",       "maxSpeedKts": 1100, "ceilingFt": 54000, "radarGimbalDeg": 60, "hasMaws": false },
+  { "id": "mirage",    "name": "Mirage 2000", "maxSpeedKts": 1453, "ceilingFt": 59000, "radarGimbalDeg": 60, "hasMaws": false },
+  { "id": "generic",   "name": "Generic",     "maxSpeedKts": 1000, "ceilingFt": 50000, "radarGimbalDeg": 60, "hasMaws": false }
 ]

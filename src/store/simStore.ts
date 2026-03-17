@@ -27,6 +27,8 @@ interface SimStore {
   /** Number of flare salvos available */
   targetFlareCount: number;
   targetWaypoints: Array<{ x: number; y: number }>;
+  /** Derived from the selected target aircraft's hasMaws field */
+  targetHasMaws: boolean;
   rangeNm: number;
   aspectAngleDeg: number;
   selectedMissileId: string;
@@ -88,6 +90,7 @@ export const useSimStore = create<SimStore>((set) => ({
   targetChaffCount: 0,
   targetFlareCount: 0,
   targetWaypoints: [],
+  targetHasMaws: false,
   rangeNm: 20,
   aspectAngleDeg: 0,
   selectedMissileId: 'test-round',
@@ -112,7 +115,12 @@ export const useSimStore = create<SimStore>((set) => ({
     set((s) => ({
       missiles: s.missiles.map((m) => (m.id === id ? { ...m, ...patch } : m)),
     })),
-  setScenario: (patch) => set(patch),
+  setScenario: (patch) => set((s) => {
+    const next = { ...s, ...patch };
+    // Keep targetHasMaws in sync with the selected target aircraft
+    next.targetHasMaws = next.aircraft[next.targetAircraftId]?.hasMaws ?? false;
+    return next;
+  }),
   setSimFrames: (frames, result, maxRangeM, minRangeM, nezM, sX, sY) =>
     set({
       simFrames: frames,

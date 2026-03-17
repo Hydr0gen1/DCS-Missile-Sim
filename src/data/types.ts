@@ -31,4 +31,48 @@ export interface AircraftData {
   maxSpeedKts: number;
   ceilingFt: number;
   radarGimbalDeg: number;
+  /**
+   * True if this aircraft is equipped with a Missile Approach Warning System (MAWS).
+   * MAWS (e.g. AN/AAR-56 on F-16C, AN/AAR-57 on F/A-18C) detects IR/UV missile plumes
+   * and provides coarse sector warnings for ALL missile types including IR.
+   * Standard RWR cannot detect IR missiles — only MAWS can.
+   */
+  hasMaws: boolean;
+}
+
+// ── RWR / MAWS types ──────────────────────────────────────────────────────────
+
+/** Radar Warning Receiver threat type.
+ * RWR only detects RADAR emissions — IR missiles are silent to RWR. */
+export type RWRThreatType = 'search' | 'track' | 'launch' | 'active';
+
+export interface RWRThreat {
+  /** Degrees relative to target heading (0 = nose, 90 = right, 180 = tail) */
+  bearing: number;
+  type: RWRThreatType;
+  /** Short missile label, e.g. "120C", "27ER", "9M" */
+  label: string;
+  /** 0–1, inversely proportional to range */
+  intensity: number;
+}
+
+/** MAWS sector index 0–7 mapped clockwise from nose
+ *  (0=ahead, 1=NE, 2=right, 3=SE, 4=aft, 5=SW, 6=left, 7=NW) */
+export interface MAWSSector {
+  sectorIdx: number;
+  active: boolean;
+}
+
+export interface RWRState {
+  /** Radar-detected threats only (SARH illumination, ARH active seeker).
+   *  IR missiles produce NO entries here. */
+  radarThreats: RWRThreat[];
+  /** True when MAWS-equipped aircraft detects missile motor plume (any type) */
+  mawsWarning: boolean;
+  /** Active MAWS sectors (coarse 8-sector bearing, not precise) */
+  mawsSectors: MAWSSector[];
+  /** True when shooter radar is actively tracking/illuminating (SARH or ARH seeker active) */
+  radarWarning: boolean;
+  /** True when a radar-guided missile seeker is active */
+  launchWarning: boolean;
 }
