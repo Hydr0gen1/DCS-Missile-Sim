@@ -15,6 +15,7 @@ const G = 9.80665;
 
 export interface ScenarioConfig {
   // Shooter
+  shooterRole?: 'aircraft' | 'ground'; // default 'aircraft'
   shooterType: string;
   shooterAlt: number;       // ft
   shooterSpeed: number;     // kts
@@ -129,22 +130,27 @@ export function runSimulation(cfg: ScenarioConfig): {
   const targetX = rangeM * Math.sin(aspectRad);
   const targetY = rangeM * Math.cos(aspectRad);
 
-  // Shooter velocity
-  const shooterSpeedMs = cfg.shooterSpeed * 0.514444;
-  const shooterHeadRad = (cfg.shooterHeading * Math.PI) / 180;
+  const isGroundLaunched = cfg.shooterRole === 'ground';
+
+  // Ground launchers are stationary; heading is auto-aimed toward target
+  const shooterSpeedMs = isGroundLaunched ? 0 : cfg.shooterSpeed * 0.514444;
+  const initialHeadingDeg = isGroundLaunched
+    ? ((Math.atan2(targetX, targetY) * 180) / Math.PI + 360) % 360
+    : cfg.shooterHeading;
 
   // Initial missile velocity = shooter velocity (launched from shooter)
   let missileState = createMissileState(
     shooterX,
     shooterY,
-    cfg.shooterHeading,
+    initialHeadingDeg,
     shooterSpeedMs,
     cfg.shooterAlt,
   );
 
   let shooterState = createAircraftState(
     shooterX, shooterY,
-    cfg.shooterSpeed, cfg.shooterHeading, cfg.shooterAlt,
+    isGroundLaunched ? 0 : cfg.shooterSpeed,
+    initialHeadingDeg, cfg.shooterAlt,
     'none', false, 0, [],
   );
 
@@ -335,15 +341,23 @@ export function runSimulation(cfg: ScenarioConfig): {
       ? { range: Math.sqrt(dxSk * dxSk + dySk * dySk), closingVelocity: 0 }
       : guidOut;
 
+    // 3D slant range for hit detection (accounts for altitude difference)
+    const dAltM = (missileState.altFt - newTarget.altFt) * FT_TO_M;
+    const range3D = Math.sqrt(
+      (newTarget.x - missileState.x) ** 2 +
+      (newTarget.y - missileState.y) ** 2 +
+      dAltM * dAltM,
+    );
+
     // Hit detection (only when not seduced)
-    if (!seduced && range < 20) {
+    if (!seduced && range3D < 20) {
       hitDetected = true;
       const fdx = shooterState.x - newTarget.x;
       const fdy = shooterState.y - newTarget.y;
       fPoleNm = Math.sqrt(fdx * fdx + fdy * fdy) * M_TO_NM;
       if (!activeRecorded) aPoleNm = fPoleNm;
       const rwrHit = computeRWR(newTarget, shooterState, missileState, m, seekerRangeM, hasMaws);
-      frames.push(buildFrame(time, missileState, shooterState, newTarget, range, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrHit));
+      frames.push(buildFrame(time, missileState, shooterState, newTarget, isGroundLaunched ? range3D : range, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrHit));
       break;
     }
 
@@ -373,7 +387,20 @@ export function runSimulation(cfg: ScenarioConfig): {
     const dragAccY = -(fdrag / currentMass) * vHatY;
 
     let altDeltaFt = 0;
-    if (burning && loftAngle > 0 && range > 0.6 * maxRangeM) {
+    if (isGroundLaunched) {
+      // Proportional elevation guidance: climb/dive toward target altitude
+      const altErrM = (guidanceTargetY === lastKnownTargetY && seduced
+        ? 0
+        : (newTarget.altFt - missileState.altFt)) * FT_TO_M;
+      const horizDist = Math.hypot(
+        guidanceTargetX - missileState.x,
+        guidanceTargetY - missileState.y,
+      );
+      const elevRad = Math.atan2(altErrM, Math.max(horizDist, 100));
+      // Clamp: max 75° climb, 45° dive (SAMs can't fly straight down)
+      const clampedElev = Math.max(-Math.PI / 4, Math.min((Math.PI * 5) / 12, elevRad));
+      altDeltaFt = (missileState.speedMs * Math.sin(clampedElev) * DT) / FT_TO_M;
+    } else if (burning && loftAngle > 0 && range > 0.6 * maxRangeM) {
       const vertMs = missileState.speedMs * Math.sin((loftAngle * Math.PI) / 180);
       altDeltaFt = vertMs * DT / FT_TO_M;
     }
@@ -448,7 +475,8 @@ export function runSimulation(cfg: ScenarioConfig): {
   const lastMissile = missileState;
   const mdx = lastMissile.x - targetState.x;
   const mdy = lastMissile.y - targetState.y;
-  const missDistance = Math.sqrt(mdx * mdx + mdy * mdy);
+  const mdAltM = (lastMissile.altFt - targetState.altFt) * FT_TO_M;
+  const missDistance = Math.sqrt(mdx * mdx + mdy * mdy + (isGroundLaunched ? mdAltM * mdAltM : 0));
 
   const pk = computePk({
     hit: hitDetected,

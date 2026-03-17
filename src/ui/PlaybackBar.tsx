@@ -9,6 +9,7 @@ export default function PlaybackBar() {
   const store = useSimStore();
   const {
     missiles, aircraft,
+    shooterRole,
     shooterAircraftId, shooterAlt, shooterSpeed, shooterHeading,
     targetAircraftId, targetAlt, targetSpeed, targetHeading,
     targetManeuver, targetChaffCount, targetFlareCount, targetWaypoints,
@@ -63,9 +64,10 @@ export default function PlaybackBar() {
     if (!missile) return;
 
     const cfg: ScenarioConfig = {
+      shooterRole,
       shooterType: shooterAircraftId,
       shooterAlt,
-      shooterSpeed,
+      shooterSpeed: shooterRole === 'ground' ? 0 : shooterSpeed,
       shooterHeading,
       targetType: aircraft[targetAircraftId]?.id ?? 'generic',
       targetAlt,

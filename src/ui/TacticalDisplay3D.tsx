@@ -48,6 +48,29 @@ function AircraftMesh({ color }: { color: string }) {
   );
 }
 
+/** Ground SAM launcher — flat vehicle box + upright launcher arm */
+function SamSiteMesh({ color }: { color: string }) {
+  return (
+    <group>
+      {/* Launcher vehicle (flat box) */}
+      <mesh>
+        <boxGeometry args={[3000, 800, 4000]} />
+        <meshStandardMaterial color={color} />
+      </mesh>
+      {/* Launcher arm (upright cylinder) */}
+      <mesh position={[0, 2200, 0]}>
+        <cylinderGeometry args={[120, 120, 2800, 6]} />
+        <meshStandardMaterial color={color} />
+      </mesh>
+      {/* Missile tip on arm */}
+      <mesh position={[0, 3800, 0]}>
+        <coneGeometry args={[200, 600, 6]} />
+        <meshStandardMaterial color={color} />
+      </mesh>
+    </group>
+  );
+}
+
 /** One 3D entity that updates its position + rotation each frame */
 function AircraftEntity({
   pos,
@@ -103,7 +126,7 @@ function MissileEntity({ pos, vx, vy }: { pos: [number, number, number]; vx: num
 }
 
 function SceneContent() {
-  const { simFrames, currentFrameIdx, simStatus, maxRangeM, minRangeM, nezM, rangeNm, aspectAngleDeg } = useSimStore();
+  const { simFrames, currentFrameIdx, simStatus, maxRangeM, minRangeM, nezM, rangeNm, aspectAngleDeg, shooterRole } = useSimStore();
   const frame = simFrames[currentFrameIdx];
 
   // Default positions when idle
@@ -174,11 +197,17 @@ function SceneContent() {
       {frame && <Line points={missilePole} color="#ff8800" lineWidth={0.5} />}
 
       {/* Shooter */}
-      <AircraftEntity
-        pos={shooterPos}
-        headingDeg={frame?.shooter.headingDeg ?? 0}
-        color="#00aaff"
-      />
+      {shooterRole === 'ground' ? (
+        <group position={shooterPos}>
+          <SamSiteMesh color="#00aaff" />
+        </group>
+      ) : (
+        <AircraftEntity
+          pos={shooterPos}
+          headingDeg={frame?.shooter.headingDeg ?? 0}
+          color="#00aaff"
+        />
+      )}
 
       {/* Target */}
       <AircraftEntity

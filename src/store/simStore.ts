@@ -6,6 +6,7 @@ import type { ScenarioConfig, SimFrame, EngagementResult, SimStatus } from '../p
 import type { ManeuverType } from '../physics/aircraft';
 
 export type AppMode = 'tactical' | 'envelope' | 'editor';
+export type ShooterRole = 'aircraft' | 'ground';
 
 interface SimStore {
   // Data
@@ -13,6 +14,7 @@ interface SimStore {
   aircraft: AircraftData[];
 
   // Scenario
+  shooterRole: ShooterRole;
   shooterAircraftId: string;
   shooterAlt: number;
   shooterSpeed: number;
@@ -68,6 +70,7 @@ interface SimStore {
   setIsPlaying: (v: boolean) => void;
   setPlaybackSpeed: (v: number) => void;
   resetSim: () => void;
+  setShooterRole: (role: ShooterRole) => void;
   setAppMode: (mode: AppMode) => void;
   addTargetWaypoint: (wp: { x: number; y: number }) => void;
   clearTargetWaypoints: () => void;
@@ -78,6 +81,7 @@ export const useSimStore = create<SimStore>((set) => ({
   aircraft: aircraftJson as AircraftData[],
 
   // Default scenario
+  shooterRole: 'aircraft',
   shooterAircraftId: 'f-16',
   shooterAlt: 25000,
   shooterSpeed: 450,
@@ -147,6 +151,7 @@ export const useSimStore = create<SimStore>((set) => ({
       simError: null,
       isPlaying: false,
     }),
+  setShooterRole: (role) => set({ shooterRole: role, ...(role === 'ground' ? { shooterSpeed: 0 } : {}) }),
   setAppMode: (mode) => set({ appMode: mode }),
   addTargetWaypoint: (wp) =>
     set((s) => ({ targetWaypoints: [...s.targetWaypoints, wp] })),

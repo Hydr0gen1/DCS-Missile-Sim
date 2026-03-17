@@ -1,4 +1,5 @@
 import { useSimStore } from '../store/simStore';
+import type { ShooterRole } from '../store/simStore';
 import type { ManeuverType } from '../physics/aircraft';
 import { getMissingFields } from '../physics/missile';
 
@@ -10,6 +11,7 @@ export default function SetupPanel() {
   const store = useSimStore();
   const {
     aircraft, missiles,
+    shooterRole, setShooterRole,
     shooterAircraftId, shooterAlt, shooterSpeed, shooterHeading,
     targetAircraftId, targetAlt, targetSpeed, targetHeading,
     targetManeuver, targetChaffCount, targetFlareCount,
@@ -25,29 +27,67 @@ export default function SetupPanel() {
     <div style={styles.panel}>
       <div style={styles.section}>
         <div style={styles.sectionTitle}>SHOOTER</div>
-        {label('Aircraft', 'Shooter aircraft type')}
-        <select
-          style={styles.select}
-          value={shooterAircraftId}
-          onChange={(e) => setScenario({ shooterAircraftId: e.target.value })}
-        >
-          {aircraft.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
+        {/* Role toggle */}
+        <div style={{ display: 'flex', gap: 3, marginBottom: 6 }}>
+          {(['aircraft', 'ground'] as ShooterRole[]).map((role) => (
+            <button
+              key={role}
+              style={{
+                ...styles.roleBtn,
+                ...(shooterRole === role ? styles.roleBtnActive : {}),
+              }}
+              onClick={() => setShooterRole(role)}
+            >
+              {role === 'aircraft' ? 'AIRCRAFT' : 'GROUND'}
+            </button>
+          ))}
+        </div>
 
-        {label(`Altitude: ${shooterAlt.toLocaleString()} ft`, 'Shooter altitude in feet AGL')}
-        <input type="range" min={0} max={60000} step={500} value={shooterAlt}
+        {shooterRole === 'aircraft' && (
+          <>
+            {label('Aircraft', 'Shooter aircraft type')}
+            <select
+              style={styles.select}
+              value={shooterAircraftId}
+              onChange={(e) => setScenario({ shooterAircraftId: e.target.value })}
+            >
+              {aircraft.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </>
+        )}
+
+        {shooterRole === 'ground'
+          ? label(`Site Alt: ${shooterAlt.toLocaleString()} ft`, 'SAM site elevation in feet')
+          : label(`Altitude: ${shooterAlt.toLocaleString()} ft`, 'Shooter altitude in feet AGL')
+        }
+        <input
+          type="range"
+          min={0}
+          max={shooterRole === 'ground' ? 2000 : 60000}
+          step={shooterRole === 'ground' ? 100 : 500}
+          value={shooterAlt}
           onChange={(e) => setScenario({ shooterAlt: +e.target.value })}
-          style={styles.slider} />
+          style={styles.slider}
+        />
 
-        {label(`Speed: ${shooterSpeed} kts`, 'Shooter true airspeed in knots')}
-        <input type="range" min={100} max={1200} step={10} value={shooterSpeed}
-          onChange={(e) => setScenario({ shooterSpeed: +e.target.value })}
-          style={styles.slider} />
+        {shooterRole === 'aircraft' && (
+          <>
+            {label(`Speed: ${shooterSpeed} kts`, 'Shooter true airspeed in knots')}
+            <input type="range" min={100} max={1200} step={10} value={shooterSpeed}
+              onChange={(e) => setScenario({ shooterSpeed: +e.target.value })}
+              style={styles.slider} />
 
-        {label(`Heading: ${shooterHeading}°`, 'Shooter heading in degrees')}
-        <input type="range" min={0} max={359} step={1} value={shooterHeading}
-          onChange={(e) => setScenario({ shooterHeading: +e.target.value })}
-          style={styles.slider} />
+            {label(`Heading: ${shooterHeading}°`, 'Shooter heading in degrees')}
+            <input type="range" min={0} max={359} step={1} value={shooterHeading}
+              onChange={(e) => setScenario({ shooterHeading: +e.target.value })}
+              style={styles.slider} />
+          </>
+        )}
+        {shooterRole === 'ground' && (
+          <div style={{ color: '#446644', fontSize: 9, marginTop: 3 }}>
+            Speed: 0 kts — Heading: auto-aimed
+          </div>
+        )}
       </div>
 
       <div style={styles.section}>
@@ -240,6 +280,22 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     padding: '3px 4px',
     marginTop: 3,
+  },
+  roleBtn: {
+    flex: 1,
+    background: 'transparent',
+    border: '1px solid #1a3a1a',
+    color: '#557755',
+    fontFamily: 'Share Tech Mono, monospace',
+    fontSize: 9,
+    padding: '3px 4px',
+    cursor: 'pointer',
+    letterSpacing: 1,
+  },
+  roleBtnActive: {
+    background: '#0d1a0d',
+    borderColor: '#00aa44',
+    color: '#00ff80',
   },
   warningBox: {
     background: '#2a1a00',

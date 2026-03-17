@@ -30,6 +30,7 @@ export default function TacticalDisplay() {
     maxRangeM, minRangeM, nezM,
     addTargetWaypoint, targetManeuver, setScenario, clearTargetWaypoints,
     rangeNm, aspectAngleDeg, shooterStartX, shooterStartY,
+    shooterRole,
   } = useSimStore();
 
   const scale = NM_PX; // px per nm
@@ -115,7 +116,11 @@ export default function TacticalDisplay() {
       // Draw default positions before simulation
       // Shooter at origin
       const [sx, sy] = worldToCanvas(0, 0, cx, cy, scale);
-      drawAircraft(ctx, sx, sy, 0, '#00aaff', '⬤');
+      if (shooterRole === 'ground') {
+        drawSamSite(ctx, sx, sy, '#00aaff');
+      } else {
+        drawAircraft(ctx, sx, sy, 0, '#00aaff', '⬤');
+      }
 
       // Target
       const tgtInitX = rangeNm * NM_TO_M * Math.sin((aspectAngleDeg * Math.PI) / 180);
@@ -126,7 +131,7 @@ export default function TacticalDisplay() {
       // Labels
       ctx.font = '10px Share Tech Mono, monospace';
       ctx.fillStyle = '#00aaff';
-      ctx.fillText('SHOOTER', sx + 8, sy - 8);
+      ctx.fillText(shooterRole === 'ground' ? 'SAM SITE' : 'SHOOTER', sx + 8, sy - 8);
       ctx.fillStyle = '#ff4444';
       ctx.fillText('TARGET', tx + 8, ty - 8);
       return;
@@ -158,7 +163,11 @@ export default function TacticalDisplay() {
 
     // Shooter
     const [sx, sy] = worldToCanvas(shooter.x, shooter.y, cx, cy, scale);
-    drawAircraft(ctx, sx, sy, shooter.headingDeg, '#00aaff', '⬤');
+    if (shooterRole === 'ground') {
+      drawSamSite(ctx, sx, sy, '#00aaff');
+    } else {
+      drawAircraft(ctx, sx, sy, shooter.headingDeg, '#00aaff', '⬤');
+    }
 
     // Target
     const [ttx, tty] = worldToCanvas(target.x, target.y, cx, cy, scale);
@@ -206,7 +215,7 @@ export default function TacticalDisplay() {
     ctx.fillStyle = '#ffaa00';
     ctx.fillText(`MSL: ${Math.round(missile.altFt).toLocaleString()} ft`, mx + 8, my - 6);
 
-  }, [simFrames, currentFrameIdx, simStatus, maxRangeM, minRangeM, nezM, rangeNm, aspectAngleDeg, scale]);
+  }, [simFrames, currentFrameIdx, simStatus, maxRangeM, minRangeM, nezM, rangeNm, aspectAngleDeg, scale, shooterRole]);
 
   useEffect(() => {
     draw();
@@ -286,6 +295,34 @@ function drawAircraft(
   ctx.moveTo(-4, 8);
   ctx.lineTo(4, 8);
   ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawSamSite(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  color: string,
+) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 1.5;
+
+  // Launcher pad (filled square)
+  ctx.fillRect(x - 6, y - 5, 12, 10);
+
+  // Upright launcher arm
+  ctx.beginPath();
+  ctx.moveTo(x, y - 5);
+  ctx.lineTo(x, y - 14);
+  ctx.stroke();
+
+  // Missile tip (small circle)
+  ctx.beginPath();
+  ctx.arc(x, y - 16, 2.5, 0, 2 * Math.PI);
+  ctx.fill();
 
   ctx.restore();
 }
