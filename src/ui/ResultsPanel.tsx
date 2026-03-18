@@ -31,11 +31,22 @@ export default function ResultsPanel() {
           <Row label="CLOSURE" value={`${(frame.closingVelocity * 1.94384).toFixed(0)} kt`} />
           <Row label="TTI" value={frame.timeToImpact < 9999 ? `${frame.timeToImpact.toFixed(1)} s` : '—'} />
           <Row label="RANGE" value={`${(frame.range * M_TO_NM).toFixed(1)} nm`} />
-          <Row label="ENERGY" value={
+          <Row label="MSL NRG" value={
             <span style={{ color: energyColor(frame.energyFraction) }}>
               {(frame.energyFraction * 100).toFixed(0)}%
             </span>
           } />
+          <Row label="TGT SPD" value={`${(frame.target.speedMs * 1.94384).toFixed(0)} kt`} />
+          {frame.target.specificExcessPower !== 0 && (
+            <Row label="TGT Ps" value={
+              <span style={{ color: frame.target.specificExcessPower >= 0 ? T.success : T.danger }}>
+                {frame.target.specificExcessPower >= 0 ? '+' : ''}{frame.target.specificExcessPower.toFixed(1)} m/s
+              </span>
+            } />
+          )}
+          {frame.target.currentG > 1.05 && (
+            <Row label="TGT G" value={`${frame.target.currentG.toFixed(1)}G`} />
+          )}
           <Row label="SEEKER" value={frame.missile.active ? <span style={{ color: T.success }}>ACTIVE</span> : 'SILENT'} />
           <Row label="MOTOR" value={frame.missile.motorBurning ? <span style={{ color: T.warning }}>BURNING</span> : 'COAST'} />
           {frame.cmEvent && <CMEventBadge event={frame.cmEvent} />}
@@ -74,6 +85,25 @@ export default function ResultsPanel() {
               ))}
             </div>
           )}
+          <Row label="TGT EXIT" value={`${simResult.targetExitSpeedKts.toFixed(0)} kts`} />
+          <Row label="SHT EXIT" value={`${simResult.shooterExitSpeedKts.toFixed(0)} kts`} />
+        </div>
+      )}
+
+      {/* Detection timeline */}
+      {simResult && simResult.detectionTimeline.length > 1 && (
+        <div style={styles.section}>
+          <div style={styles.sectionTitle}>DETECTION</div>
+          {simResult.detectionTimeline.map((ev, i) => (
+            <div key={i} style={styles.timelineEvent}>
+              <span style={{ color: timelineColor(ev.type), fontFamily: T.fontMono }}>
+                {ev.time.toFixed(1)}s
+              </span>
+              <span style={{ color: T.textDim, marginLeft: 6, fontSize: 9 }}>
+                {ev.description}
+              </span>
+            </div>
+          ))}
         </div>
       )}
 
@@ -126,6 +156,14 @@ function energyColor(e: number): string {
   if (e > 0.6) return T.success;
   if (e > 0.3) return T.warning;
   return T.danger;
+}
+
+function timelineColor(type: string): string {
+  if (type === 'launch') return T.accentBright;
+  if (type === 'search_detected') return T.textDim;
+  if (type === 'stt_lock') return T.warning;
+  if (type === 'missile_active') return T.danger;
+  return T.text;
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -183,5 +221,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 10,
     lineHeight: 1.6,
     marginTop: 10,
+  },
+  timelineEvent: {
+    display: 'flex',
+    alignItems: 'baseline',
+    marginBottom: 3,
+    fontSize: 10,
   },
 };

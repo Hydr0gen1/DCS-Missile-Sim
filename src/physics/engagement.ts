@@ -8,7 +8,9 @@ import type { MissileState } from './missile';
 import { proportionalNav, clampAcceleration, getPNGain } from './guidance';
 import { createAircraftState, stepAircraft } from './aircraft';
 import type { AircraftState, ManeuverType } from './aircraft';
-import type { MissileData, RWRState, RWRThreat, MAWSSector } from '../data/types';
+import type { MissileData, RWRState, RWRThreat, MAWSSector, AircraftData, DetectionEvent, WEZResult } from '../data/types';
+import { computeDLZ } from './missile';
+import { DCS_CM_COEFFS } from '../data/dcsConstants';
 
 export const DT = 0.05; // seconds per physics step
 const G = 9.80665;
@@ -69,6 +71,10 @@ export interface ScenarioConfig {
   targetHasMaws: boolean;
   /** If true, target only executes maneuver after RWR/MAWS detects the threat */
   targetReactOnDetect?: boolean;
+  /** Shooter aircraft data (enables energy model and radar detection timeline) */
+  shooterAircraftData?: AircraftData;
+  /** Target aircraft data (enables energy model, RCS-based radar detection) */
+  targetAircraftData?: AircraftData;
   // Initial geometry
   rangeNm: number;
   aspectAngleDeg: number;   // 0=hot, 180=cold
@@ -93,6 +99,9 @@ export interface EngagementResult {
   maxSpeedMach: number;       // peak missile speed in Mach
   maxGLoad: number;           // peak lateral G-load
   distanceTraveledNm: number; // total missile path length in nm
+  targetExitSpeedKts: number;   // target speed at end of engagement (kts)
+  shooterExitSpeedKts: number;  // shooter speed at end of engagement (kts)
+  detectionTimeline: DetectionEvent[];
 }
 
 export type CMEventType = 'chaff_seduced' | 'flare_seduced' | 'cm_defeated' | 'reacquired';
@@ -116,6 +125,7 @@ export interface SimFrame {
   energyFraction: number;  // 0–1
   cmEvent?: CMEvent;       // countermeasure event at this frame (if any)
   rwr?: RWRState;          // RWR/MAWS state for target aircraft
+  wez?: WEZResult;         // dynamic launch zone at this frame
 }
 
 export type SimStatus = 'idle' | 'running' | 'hit' | 'miss' | 'error';
@@ -197,9 +207,10 @@ export function runSimulation(cfg: ScenarioConfig): {
     cfg.targetWaypoints,
   );
 
-  const maxRangeM = estimateMaxRangeM(m, cfg.shooterAlt);
-  const minRangeM = maxRangeM * 0.05;
-  const nezM = maxRangeM * 0.25;
+  const initialDlz = computeDLZ(m, cfg.shooterAlt, cfg.shooterSpeed, cfg.targetAlt, cfg.targetSpeed, cfg.aspectAngleDeg);
+  const maxRangeM = initialDlz.rmax_m;
+  const minRangeM = initialDlz.rmin_m;
+  const nezM = initialDlz.nez_m;
 
   const frames: SimFrame[] = [];
   let hitDetected = false;
@@ -277,6 +288,19 @@ export function runSimulation(cfg: ScenarioConfig): {
     return (rngState >>> 0) / 0xffffffff;
   }
 
+  // Detection timeline: launch event at t=0, seeker/radar events added during loop
+  const detectionTimeline: DetectionEvent[] = [];
+  detectionTimeline.push({ time: 0, type: 'launch', description: `${m.name} launched` });
+  let searchDetected = false;
+  let sttLocked = false;
+  let sttLockTime = -1;
+  const shooterRadar = cfg.shooterAircraftData?.radar ?? null;
+  const targetRcs = cfg.targetAircraftData?.rcs_m2 ?? 3.0;
+
+  // Dynamic WEZ (updated every 10 frames)
+  let currentWez: WEZResult | undefined;
+  let wezCounter = 0;
+
   while (time < maxTime) {
     // --- Seeker activation (before stepAircraft so detection can gate maneuver) ---
     const dxSk = targetState.x - missileState.x;
@@ -290,6 +314,7 @@ export function runSimulation(cfg: ScenarioConfig): {
         const ssDy = shooterState.y - targetState.y;
         aPoleNm = Math.sqrt(ssDx * ssDx + ssDy * ssDy) * M_TO_NM;
         activeRecorded = true;
+        detectionTimeline.push({ time, type: 'missile_active', description: `${m.name} seeker active at ${(rangeSk * M_TO_NM).toFixed(1)} nm` });
       }
     }
     if (m.type === 'SARH' && !missileState.active) {
@@ -297,7 +322,28 @@ export function runSimulation(cfg: ScenarioConfig): {
       if (!activeRecorded) {
         aPoleNm = cfg.rangeNm;
         activeRecorded = true;
+        detectionTimeline.push({ time, type: 'missile_active', description: `${m.name} SARH seeker active` });
       }
+    }
+
+    // --- Radar detection timeline (shooter radar → target search & lock) ---
+    if (shooterRadar && !searchDetected) {
+      const s2tRange = Math.hypot(targetState.x - shooterState.x, targetState.y - shooterState.y);
+      const detectRange = shooterRadar.maxRange_nm * NM_TO_M *
+        Math.pow(Math.max(targetRcs / shooterRadar.referenceRCS_m2, 0.01), 0.25);
+      if (s2tRange <= detectRange) {
+        searchDetected = true;
+        sttLockTime = time + shooterRadar.scanTime_s;
+        detectionTimeline.push({
+          time,
+          type: 'search_detected',
+          description: `Target detected at ${(s2tRange * M_TO_NM).toFixed(1)} nm`,
+        });
+      }
+    }
+    if (shooterRadar && searchDetected && !sttLocked && time >= sttLockTime) {
+      sttLocked = true;
+      detectionTimeline.push({ time, type: 'stt_lock', description: 'STT lock achieved' });
     }
 
     // --- Threat detection (for react-on-detect feature) ---
@@ -311,12 +357,13 @@ export function runSimulation(cfg: ScenarioConfig): {
       }
     }
 
-    // --- Step target aircraft (with threat-gated maneuvering) ---
+    // --- Step target aircraft (with threat-gated maneuvering + energy model) ---
     const newTarget = stepAircraft(
       targetState, DT,
       missileState.x, missileState.y,
       missileState.active,
       !reactOnDetect || threatDetectedByTarget,
+      cfg.targetAircraftData,
     );
 
     // Track last known target position when seeker is active
@@ -325,18 +372,38 @@ export function runSimulation(cfg: ScenarioConfig): {
       lastKnownTargetY = newTarget.y;
     }
 
-    // --- Countermeasure dispensing & seduction check ---
+    // --- Countermeasure dispensing & seduction check (DCS missiles_prb_coeff.lua model) ---
     let cmEventThisFrame: CMEvent | undefined;
 
     if (missileState.active && !seduced && time - lastCmDispenseTime >= CM_INTERVAL) {
       const isIR = m.type === 'IR';
       const isRadar = m.type === 'ARH' || m.type === 'SARH';
 
+      // Missile→target closing rate (m/s) — used by radar chaff Doppler model
+      const mtDx = newTarget.x - missileState.x;
+      const mtDy = newTarget.y - missileState.y;
+      const mtRange = Math.sqrt(mtDx * mtDx + mtDy * mtDy);
+      const radialVel = mtRange > 1
+        ? ((newTarget.vx - missileState.vx) * mtDx + (newTarget.vy - missileState.vy) * mtDy) / mtRange
+        : 0;
+      const absClosingRate = Math.abs(radialVel);
+
+      // Ticks per CM salvo (CM_INTERVAL / DT = 40 ticks at DT=0.05s)
+      const ticksPerSalvo = CM_INTERVAL / DT;
+
       if (isIR && flareRemaining > 0) {
-        // Flare seduction check
-        // Base P per salvo for flares: 0.35 (DCS community tests: 1-2 salvos give ~30-40% defeat)
-        // SARH chaff has extra aspect penalty (only works in notch), but IR flares work regardless
-        const pSeduced = Math.min(0.92, 0.35 * ccmK0);
+        // DCS IR flare model (k7, k9, k11):
+        // Aspect factor: front hemisphere = k7 (dim plume), rear = 2−k7 (bright exhaust)
+        const missAngle = Math.atan2(missileState.x - newTarget.x, missileState.y - newTarget.y);
+        const tgtHeadRad = (newTarget.headingDeg * Math.PI) / 180;
+        const aspectDiffIR = Math.abs(normalizeAngleRad(missAngle - tgtHeadRad));
+        const isFrontHemi = aspectDiffIR < Math.PI / 2;
+        const aspectFactor = isFrontHemi ? DCS_CM_COEFFS.k7 : (2.0 - DCS_CM_COEFFS.k7);
+        const screenFactor = isFrontHemi ? DCS_CM_COEFFS.k9 : DCS_CM_COEFFS.k11;
+        // Convert per-tick P to per-salvo P: P_salvo = 1 − (1 − p_tick)^N
+        const pPerTick = screenFactor * aspectFactor;
+        const pSeduced = Math.min(0.95, ccmK0 * (1 - Math.pow(Math.max(0, 1 - pPerTick), ticksPerSalvo)));
+
         const roll = nextRng();
         flareRemaining--;
         flareSalvosUsed++;
@@ -344,34 +411,20 @@ export function runSimulation(cfg: ScenarioConfig): {
 
         if (roll < pSeduced) {
           seduced = true;
-          seductionEndTime = time + 2.0 + nextRng() * 2.0; // 2–4s seduced window
+          seductionEndTime = time + 2.0 + nextRng() * 2.0;
           cmEventThisFrame = { type: 'flare_seduced', probability: pSeduced, cm: 'flare' };
           seductionEvents.push(cmEventThisFrame);
         } else {
           cmEventThisFrame = { type: 'cm_defeated', probability: pSeduced, cm: 'flare' };
         }
       } else if (isRadar && chaffRemaining > 0) {
-        // Chaff seduction check
-        // Base P per salvo: 0.25 for ARH, higher for SARH (0.35)
-        // SARH is more susceptible to chaff (breaks CW illumination lock)
-        // Additional notch aspect bonus: if target is roughly beaming the missile (+/- 30°),
-        // chaff is more effective against SARH (doppler notch + chaff cloud overlap)
-        const basePChaff = m.type === 'SARH' ? 0.35 : 0.25;
-        let aspectBonus = 1.0;
-        if (m.type === 'SARH') {
-          // Check if target is in notch aspect relative to missile
-          const missileAngle = Math.atan2(
-            missileState.x - newTarget.x,
-            missileState.y - newTarget.y,
-          );
-          const targetHeadRad = (newTarget.headingDeg * Math.PI) / 180;
-          const aspectDiff = Math.abs(normalizeAngleRad(targetHeadRad - missileAngle));
-          // Within 30° of 90° (beam aspect) = notch
-          if (Math.abs(aspectDiff - Math.PI / 2) < (30 * Math.PI / 180)) {
-            aspectBonus = 1.8; // notch + chaff very effective vs SARH
-          }
-        }
-        const pSeduced = Math.min(0.88, basePChaff * ccmK0 * aspectBonus);
+        // DCS radar chaff model (k3, k4, k5, k6):
+        // Interpolate P per tick between k4 (beam, low Vr) and k3 (head-on, high Vr)
+        const vrClamped = Math.max(DCS_CM_COEFFS.k6, Math.min(DCS_CM_COEFFS.k5, absClosingRate));
+        const vrFrac = (vrClamped - DCS_CM_COEFFS.k6) / (DCS_CM_COEFFS.k5 - DCS_CM_COEFFS.k6);
+        const pPerTick = DCS_CM_COEFFS.k4 - vrFrac * (DCS_CM_COEFFS.k4 - DCS_CM_COEFFS.k3);
+        const pSeduced = Math.min(0.92, ccmK0 * (1 - Math.pow(Math.max(0, 1 - pPerTick), ticksPerSalvo)));
+
         const roll = nextRng();
         chaffRemaining--;
         chaffSalvosUsed++;
@@ -379,7 +432,7 @@ export function runSimulation(cfg: ScenarioConfig): {
 
         if (roll < pSeduced) {
           seduced = true;
-          seductionEndTime = time + 1.5 + nextRng() * 2.5; // 1.5–4s seduced window
+          seductionEndTime = time + 1.5 + nextRng() * 2.5;
           cmEventThisFrame = { type: 'chaff_seduced', probability: pSeduced, cm: 'chaff' };
           seductionEvents.push(cmEventThisFrame);
         } else {
@@ -520,7 +573,7 @@ export function runSimulation(cfg: ScenarioConfig): {
       fPoleNm = Math.sqrt(fdx * fdx + fdy * fdy) * M_TO_NM;
       if (!activeRecorded) aPoleNm = fPoleNm;
       const rwrEnergy = computeRWR(newTarget, shooterState, missileState, m, seekerRangeM, hasMaws);
-      frames.push(buildFrame(time, missileState, shooterState, newTarget, range, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrEnergy));
+      frames.push(buildFrame(time, missileState, shooterState, newTarget, range, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrEnergy, currentWez));
       break;
     }
 
@@ -540,14 +593,14 @@ export function runSimulation(cfg: ScenarioConfig): {
       if (!activeRecorded) aPoleNm = fPoleNm;
       const rwrHit = computeRWR(newTarget, shooterState, missileState, m, seekerRangeM, hasMaws);
       const rHit = Math.hypot(newTarget.x - newMx, newTarget.y - newMy);
-      frames.push(buildFrame(time + DT, missileState, shooterState, newTarget, isGroundLaunched ? cpa : rHit, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrHit));
+      frames.push(buildFrame(time + DT, missileState, shooterState, newTarget, isGroundLaunched ? cpa : rHit, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrHit, currentWez));
       break;
     }
 
     // ── Ground-strike check (missile hit terrain after boost) ─────────────────
     if (newAlt <= 0 && newVz < 0 && time > burnTime + 1.0) {
       missReason = 'ground strike';
-      frames.push(buildFrame(time + DT, missileState, shooterState, newTarget, range, closingVelocity, maxSpeedMs, cmEventThisFrame));
+      frames.push(buildFrame(time + DT, missileState, shooterState, newTarget, range, closingVelocity, maxSpeedMs, cmEventThisFrame, undefined, currentWez));
       break;
     }
 
@@ -576,17 +629,33 @@ export function runSimulation(cfg: ScenarioConfig): {
       altAtPeakSpeed = newAlt;
     }
 
-    shooterState = {
-      ...shooterState,
-      x: shooterState.x + shooterState.vx * DT,
-      y: shooterState.y + shooterState.vy * DT,
-    };
+    // --- Step shooter (with energy model when aircraft data available) ---
+    shooterState = stepAircraft(
+      shooterState, DT,
+      missileState.x, missileState.y,
+      false, false,
+      cfg.shooterAircraftData,
+    );
+
+    // --- Per-frame WEZ update (every 10 frames) ---
+    if (wezCounter % 10 === 0) {
+      const wezDx = newTarget.x - shooterState.x;
+      const wezDy = newTarget.y - shooterState.y;
+      const wezBearingRad = Math.atan2(wezDx, wezDy);
+      const wezShooterHeadRad = (shooterState.headingDeg * Math.PI) / 180;
+      const wezAspect = Math.abs(normalizeAngleRad(wezBearingRad - wezShooterHeadRad)) * 180 / Math.PI;
+      currentWez = computeDLZ(
+        m, shooterState.altFt, shooterState.speedMs / 0.514444,
+        newTarget.altFt, newTarget.speedMs / 0.514444, wezAspect,
+      );
+    }
+    wezCounter++;
 
     targetState = newTarget;
     time += DT;
 
     const rwrFrame = computeRWR(targetState, shooterState, missileState, m, seekerRangeM, hasMaws);
-    frames.push(buildFrame(time, missileState, shooterState, targetState, range, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrFrame));
+    frames.push(buildFrame(time, missileState, shooterState, targetState, range, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrFrame, currentWez));
   }
 
   if (time >= maxTime && !hitDetected) {
@@ -638,6 +707,9 @@ export function runSimulation(cfg: ScenarioConfig): {
     maxSpeedMach: peakSpeedMs / speedOfSound(altAtPeakSpeed),
     maxGLoad: peakGLoad,
     distanceTraveledNm: distanceTraveledM * M_TO_NM,
+    targetExitSpeedKts: targetState.speedMs / 0.514444,
+    shooterExitSpeedKts: shooterState.speedMs / 0.514444,
+    detectionTimeline,
   };
 
   return { frames, result, maxRangeM, minRangeM, nezM, shooterStartX: shooterX, shooterStartY: shooterY };
@@ -653,6 +725,7 @@ function buildFrame(
   maxSpeedMs: number,
   cmEvent?: CMEvent,
   rwr?: RWRState,
+  wez?: WEZResult,
 ): SimFrame {
   const tti = cv > 0 ? range / cv : 9999;
   return {
@@ -666,6 +739,7 @@ function buildFrame(
     energyFraction: missile.energy,
     cmEvent,
     rwr,
+    wez,
   };
 }
 

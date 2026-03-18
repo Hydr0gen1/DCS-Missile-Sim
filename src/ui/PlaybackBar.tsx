@@ -64,13 +64,16 @@ export default function PlaybackBar() {
     const missile = missiles.find((m) => m.id === selectedMissileId);
     if (!missile) return;
 
+    const shooterAircraft = aircraft.find((a) => a.id === shooterAircraftId);
+    const targetAircraft = aircraft[targetAircraftId];
+
     const cfg: ScenarioConfig = {
       shooterRole,
       shooterType: shooterAircraftId,
       shooterAlt,
       shooterSpeed: shooterRole === 'ground' ? 0 : shooterSpeed,
       shooterHeading,
-      targetType: aircraft[targetAircraftId]?.id ?? 'generic',
+      targetType: targetAircraft?.id ?? 'generic',
       targetAlt,
       targetSpeed,
       targetHeading,
@@ -83,6 +86,8 @@ export default function PlaybackBar() {
       rangeNm,
       aspectAngleDeg,
       missile,
+      shooterAircraftData: shooterAircraft,
+      targetAircraftData: targetAircraft,
     };
 
     const err = validateScenario(cfg);
