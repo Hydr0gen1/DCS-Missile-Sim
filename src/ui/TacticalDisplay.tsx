@@ -177,22 +177,6 @@ export default function TacticalDisplay() {
     drawVelocityVector(ctx, sx, sy, shooter.vx, shooter.vy, scale, '#00aaff');
     drawVelocityVector(ctx, ttx, tty, target.vx, target.vy, scale, '#ff4444');
 
-    // Energy bar — bottom left
-    const barW = 80;
-    const barH = 8;
-    const barX = 10;
-    const barY = H - 20;
-    ctx.fillStyle = '#111';
-    ctx.fillRect(barX, barY, barW, barH);
-    ctx.fillStyle = energyToColor(missile.energy);
-    ctx.fillRect(barX, barY, barW * missile.energy, barH);
-    ctx.strokeStyle = '#444';
-    ctx.lineWidth = 0.5;
-    ctx.strokeRect(barX, barY, barW, barH);
-    ctx.fillStyle = '#aaa';
-    ctx.font = '9px Share Tech Mono, monospace';
-    ctx.fillText('ENERGY', barX, barY - 3);
-
     // HUD text overlays
     ctx.font = '11px Share Tech Mono, monospace';
 

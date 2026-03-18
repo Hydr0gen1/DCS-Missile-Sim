@@ -12,6 +12,27 @@ import type { MissileData, RWRState, RWRThreat, MAWSSector } from '../data/types
 
 export const DT = 0.05; // seconds per physics step
 const G = 9.80665;
+const KILL_RADIUS_M = 8; // proximity fuze lethal radius (m)
+
+/**
+ * Minimum 3-D distance between missile flight-segment [p0→p1] and target point T.
+ * All inputs in metres. Returns metres.
+ * Detects pass-through at any closing speed.
+ */
+function closestApproachDist(
+  mx0: number, my0: number, mz0: number,
+  mx1: number, my1: number, mz1: number,
+  tx: number,  ty: number,  tz: number,
+): number {
+  const dx = mx1 - mx0, dy = my1 - my0, dz = mz1 - mz0;
+  const fx = tx - mx0,  fy = ty - my0,  fz = tz - mz0;
+  const len2 = dx * dx + dy * dy + dz * dz;
+  const t = len2 > 0.001 ? Math.max(0, Math.min(1, (fx * dx + fy * dy + fz * dz) / len2)) : 0;
+  const ex = mx0 + t * dx - tx;
+  const ey = my0 + t * dy - ty;
+  const ez = mz0 + t * dz - tz;
+  return Math.sqrt(ex * ex + ey * ey + ez * ez);
+}
 
 /**
  * Mach-dependent drag multiplier.
@@ -379,28 +400,6 @@ export function runSimulation(cfg: ScenarioConfig): {
       ? { range: Math.sqrt(dxSk * dxSk + dySk * dySk), closingVelocity: 0 }
       : guidOut;
 
-    // 3D slant range for hit detection (accounts for altitude difference)
-    const dAltM = (missileState.altFt - newTarget.altFt) * FT_TO_M;
-    const range3D = Math.sqrt(
-      (newTarget.x - missileState.x) ** 2 +
-      (newTarget.y - missileState.y) ** 2 +
-      dAltM * dAltM,
-    );
-
-    // Hit detection (only when not seduced)
-    // 75 m kill radius covers proximity-fuze lethal range and prevents
-    // fast missiles from stepping over the 20 m threshold at DT=0.05 s.
-    if (!seduced && range3D < 75) {
-      hitDetected = true;
-      const fdx = shooterState.x - newTarget.x;
-      const fdy = shooterState.y - newTarget.y;
-      fPoleNm = Math.sqrt(fdx * fdx + fdy * fdy) * M_TO_NM;
-      if (!activeRecorded) aPoleNm = fPoleNm;
-      const rwrHit = computeRWR(newTarget, shooterState, missileState, m, seekerRangeM, hasMaws);
-      frames.push(buildFrame(time, missileState, shooterState, newTarget, isGroundLaunched ? range3D : range, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrHit));
-      break;
-    }
-
     let { ax, ay, limited } = clampAcceleration(guidOut.ax, guidOut.ay, gLimit, missileState.speedMs);
     if (limited && !seduced) {
       missReason = 'insufficient maneuverability';
@@ -417,17 +416,31 @@ export function runSimulation(cfg: ScenarioConfig): {
 
     // ── Elevation guidance command ────────────────────────────────────────────
     let elevCmd = 0; // rad
+    const altErrM = (seduced ? 0 : (newTarget.altFt - missileState.altFt)) * FT_TO_M;
+    const horizDistE = Math.hypot(
+      guidanceTargetX - missileState.x,
+      guidanceTargetY - missileState.y,
+    );
     if (isGroundLaunched) {
-      const altErrM = (seduced ? 0 : (newTarget.altFt - missileState.altFt)) * FT_TO_M;
-      const horizDist = Math.hypot(
-        guidanceTargetX - missileState.x,
-        guidanceTargetY - missileState.y,
-      );
-      elevCmd = Math.atan2(altErrM, Math.max(horizDist, 100));
-      // Clamp: max 75° climb, 45° dive
-      elevCmd = Math.max(-Math.PI / 4, Math.min((Math.PI * 5) / 12, elevCmd));
-    } else if (burning && loftAngle > 0 && range > 0.6 * maxRangeM) {
-      elevCmd = (loftAngle * Math.PI) / 180;
+      // Initial steep launch phase (first 20% of burn): minimum 60° climb to gain altitude
+      if (burning && time < burnTime * 0.2 && altErrM > 0) {
+        elevCmd = Math.PI / 3; // 60° initial climb
+      } else {
+        elevCmd = Math.atan2(altErrM, Math.max(horizDistE, 100));
+        // Clamp: max 75° climb, 45° dive
+        elevCmd = Math.max(-Math.PI / 4, Math.min((Math.PI * 5) / 12, elevCmd));
+      }
+    } else {
+      // Air-launched: loft during boost at long range, else always steer to target altitude
+      if (burning && loftAngle > 0 && horizDistE > maxRangeM * 0.25) {
+        // Loft phase: pitch up during boost for long-range energy management
+        elevCmd = (loftAngle * Math.PI) / 180;
+      } else {
+        // Direct / terminal: actively guide nose toward target altitude
+        // This prevents the missile from flying above or below the target
+        elevCmd = Math.atan2(altErrM, Math.max(horizDistE, 200));
+        elevCmd = Math.max(-Math.PI / 2, Math.min(Math.PI / 3, elevCmd));
+      }
     }
 
     // ── 3D speed and drag ─────────────────────────────────────────────────────
@@ -494,13 +507,40 @@ export function runSimulation(cfg: ScenarioConfig): {
       break;
     }
 
+    // ── CPA hit detection: catches pass-through at any closing speed ──────────
+    const newMx = missileState.x + newVx * DT;
+    const newMy = missileState.y + newVy * DT;
+    const cpa = closestApproachDist(
+      missileState.x, missileState.y, missileState.altFt * FT_TO_M,
+      newMx, newMy, newAlt * FT_TO_M,
+      newTarget.x, newTarget.y, newTarget.altFt * FT_TO_M,
+    );
+    if (!seduced && cpa < KILL_RADIUS_M) {
+      hitDetected = true;
+      const fdxH = shooterState.x - newTarget.x;
+      const fdyH = shooterState.y - newTarget.y;
+      fPoleNm = Math.sqrt(fdxH * fdxH + fdyH * fdyH) * M_TO_NM;
+      if (!activeRecorded) aPoleNm = fPoleNm;
+      const rwrHit = computeRWR(newTarget, shooterState, missileState, m, seekerRangeM, hasMaws);
+      const rHit = Math.hypot(newTarget.x - newMx, newTarget.y - newMy);
+      frames.push(buildFrame(time + DT, missileState, shooterState, newTarget, isGroundLaunched ? cpa : rHit, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrHit));
+      break;
+    }
+
+    // ── Ground-strike check (missile hit terrain after boost) ─────────────────
+    if (newAlt <= 0 && newVz < 0 && time > burnTime + 1.0) {
+      missReason = 'ground strike';
+      frames.push(buildFrame(time + DT, missileState, shooterState, newTarget, range, closingVelocity, maxSpeedMs, cmEventThisFrame));
+      break;
+    }
+
     const newTrail = [...missileState.trail, { x: missileState.x, y: missileState.y, alt: missileState.altFt }];
     if (newTrail.length > 500) newTrail.shift();
 
     missileState = {
       ...missileState,
-      x: missileState.x + newVx * DT,
-      y: missileState.y + newVy * DT,
+      x: newMx,
+      y: newMy,
       vx: newVx,
       vy: newVy,
       vz: newVz,
@@ -511,27 +551,6 @@ export function runSimulation(cfg: ScenarioConfig): {
       energy: energyFrac,
       trail: newTrail,
     };
-
-    // Second hit check using UPDATED missile position — catches missiles that
-    // step over the target (old pos outside 75 m, new pos inside 75 m).
-    if (!seduced && !hitDetected) {
-      const dAltM2 = (missileState.altFt - newTarget.altFt) * FT_TO_M;
-      const range3D2 = Math.sqrt(
-        (newTarget.x - missileState.x) ** 2 +
-        (newTarget.y - missileState.y) ** 2 +
-        dAltM2 * dAltM2,
-      );
-      if (range3D2 < 75) {
-        hitDetected = true;
-        const fdx2 = shooterState.x - newTarget.x;
-        const fdy2 = shooterState.y - newTarget.y;
-        fPoleNm = Math.sqrt(fdx2 * fdx2 + fdy2 * fdy2) * M_TO_NM;
-        if (!activeRecorded) aPoleNm = fPoleNm;
-        const rwrHit2 = computeRWR(newTarget, shooterState, missileState, m, seekerRangeM, hasMaws);
-        frames.push(buildFrame(time + DT, missileState, shooterState, newTarget, isGroundLaunched ? range3D2 : range, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrHit2));
-        break;
-      }
-    }
 
     // Track peak speed and distance traveled
     distanceTraveledM += newSpeed3D * DT;
@@ -705,6 +724,13 @@ function computeRWR(
   // Short label: first 5 chars without spaces, e.g. "AIM-9" "R-27E" "120C"
   const shortLabel = missileData.name.replace(/\s+/g, '').slice(0, 5);
 
+  // Is missile still closing on target? (gate all threats once missile has passed)
+  const mtx = target.x - missile.x, mty = target.y - missile.y;
+  const closingRate = missileRangeM > 1
+    ? (missile.vx * mtx + missile.vy * mty) / missileRangeM
+    : 0;
+  const missileApproaching = closingRate > -50; // allow small negative (terminal proximity)
+
   // --- RWR: radar threats only (IR missiles have no entry here) ---
   if (missileData.type === 'SARH') {
     // Shooter continuously illuminates target with CW radar — always detectable
@@ -724,8 +750,8 @@ function computeRWR(
         label: shortLabel,
         intensity: Math.min(0.7, 30000 / Math.max(shooterRangeM, 1000)),
       });
-    } else {
-      // Seeker active: missile pings target directly — ACTIVE spike from missile bearing
+    } else if (missileApproaching) {
+      // Seeker active AND missile still closing: ACTIVE spike from missile bearing
       radarThreats.push({
         bearing: relBearing(missile.x, missile.y),
         type: 'active',
@@ -739,7 +765,7 @@ function computeRWR(
   // --- MAWS: UV/IR plume detection only within realistic sensor range (~6nm) ---
   const MAWS_RANGE_M = 11112; // ~6nm, AN/AAR-56/57 spec
   const mawsActive: MAWSSector[] = [];
-  const mawsWarning = hasMaws && missile.motorBurning && missileRangeM <= MAWS_RANGE_M;
+  const mawsWarning = hasMaws && missile.motorBurning && missileRangeM <= MAWS_RANGE_M && missileApproaching;
   if (mawsWarning) {
     const missileBearing = relBearing(missile.x, missile.y);
     // 8 sectors of 45° each, sector 0 = forward arc
@@ -752,7 +778,7 @@ function computeRWR(
     mawsWarning,
     mawsSectors: mawsActive,
     radarWarning: missileData.type === 'SARH' || (missileData.type === 'ARH' && missile.active),
-    launchWarning: missile.active && missileData.type === 'ARH',
+    launchWarning: missile.active && missileData.type === 'ARH' && missileApproaching,
   };
 }
 

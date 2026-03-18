@@ -54,8 +54,11 @@ export function createAircraftState(
   };
 }
 
-const MAX_G = 9.0; // structural G for maneuvering
+const MAX_G   = 9.0; // structural G for max-g break turn
+const CRANK_G = 3.0; // moderate load for crank (extend/cut corners)
+const NOTCH_G = 4.0; // aggressive beam turn for doppler notch
 const G = 9.80665;
+const MIN_ALT_FT = 500; // minimum safe altitude for defensive maneuvers (AGL)
 
 /** Step aircraft state forward by dt seconds */
 export function stepAircraft(
@@ -81,32 +84,37 @@ export function stepAircraft(
 
     switch (maneuver) {
       case 'crank': {
-        // Turn 50° off missile bearing
+        // Turn 50° off missile bearing at moderate G — does NOT snap instantly
         const crankRad = missileAngle + (50 * Math.PI) / 180;
-        headingRad = crankRad;
+        const crankTurnRate = (CRANK_G * G) / Math.max(speedMs, 50); // rad/s
+        const crankDelta = crankTurnRate * dt;
+        const crankDiff = normalizeAngle(crankRad - headingRad);
+        headingRad += Math.sign(crankDiff) * Math.min(Math.abs(crankDiff), crankDelta);
         break;
       }
       case 'notch': {
-        // 90° off missile bearing (beam) + descend
+        // 90° off missile bearing (beam) at NOTCH_G + descend toward terrain mask
         const notchRad = missileAngle + (90 * Math.PI) / 180;
-        headingRad = notchRad;
-        altFt = Math.max(200, altFt - 100 * dt); // 100 ft/s ≈ 6,000 fpm
+        const notchTurnRate = (NOTCH_G * G) / Math.max(speedMs, 50); // rad/s
+        const notchDelta = notchTurnRate * dt;
+        const notchDiff = normalizeAngle(notchRad - headingRad);
+        headingRad += Math.sign(notchDiff) * Math.min(Math.abs(notchDiff), notchDelta);
+        altFt = Math.max(MIN_ALT_FT, altFt - 100 * dt); // 100 ft/s ≈ 6,000 fpm
         break;
       }
       case 'bunt': {
-        // Dive and increase speed
-        altFt = Math.max(200, altFt - 250 * dt); // 250 ft/s ≈ 15,000 fpm
+        // Bunt: push-over dive + accelerate; heading maintained
+        altFt = Math.max(MIN_ALT_FT, altFt - 250 * dt); // 250 ft/s ≈ 15,000 fpm
         speedMs = Math.min(speedMs * 1.001, 450);
         break;
       }
       case 'break': {
         // Max-G turn perpendicular to missile
         const breakRad = missileAngle + (90 * Math.PI) / 180;
-        const turnRate = (MAX_G * G) / speedMs; // rad/s
-        const dHeading = turnRate * dt;
-        // Snap to break direction
-        const diff = normalizeAngle(breakRad - headingRad);
-        headingRad += Math.sign(diff) * Math.min(Math.abs(diff), dHeading);
+        const breakTurnRate = (MAX_G * G) / Math.max(speedMs, 50); // rad/s
+        const breakDelta = breakTurnRate * dt;
+        const breakDiff = normalizeAngle(breakRad - headingRad);
+        headingRad += Math.sign(breakDiff) * Math.min(Math.abs(breakDiff), breakDelta);
         break;
       }
     }
