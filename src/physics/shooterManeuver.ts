@@ -13,6 +13,7 @@ import { normalizeAngle } from './aircraft';
 import type { AircraftState } from './aircraft';
 import type { AircraftData } from '../data/types';
 import type { ShooterManeuverType } from '../data/types';
+import { airDensity } from './atmosphere';
 
 const G = 9.80665;
 const CRANK_G = 3.0;
@@ -115,7 +116,7 @@ function stepHeading(
   if (config?.maxThrust_N && config.mass_kg && config.wingArea_m2 &&
       config.Cd0 !== undefined && config.K_induced !== undefined) {
     // Simplified energy model (same as stepAircraft)
-    const rho = 1.225 * Math.exp(-altFt * FT_TO_M / 8500);
+    const rho = airDensity(altFt);
     const q = 0.5 * rho * speedMs * speedMs;
     const thrustAvail = config.maxThrust_N * Math.pow(Math.max(rho / RHO_SL, 0.01), 0.7);
     const CL = (config.mass_kg * G * currentG) / Math.max(q * config.wingArea_m2, 1);

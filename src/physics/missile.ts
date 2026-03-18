@@ -8,7 +8,7 @@ export interface MissileState {
   vy: number;         // m/s (horizontal north)
   vz: number;         // m/s (vertical, positive = climbing)
   altFt: number;      // ft
-  speedMs: number;    // m/s (horizontal magnitude)
+  speedMs: number;    // m/s (true 3D airspeed)
   timeFlight: number; // s
   motorBurning: boolean;
   active: boolean;    // seeker gone active
@@ -49,12 +49,16 @@ export function getCxDCS(mach: number, cx: CxCoeffs): number {
   const Cx_wave = k1 * Math.exp(-k2 * (mach - 1.0) ** 2);
   // Post-crisis supersonic decline
   const Cx_decline = k4 > 0 ? Math.exp(-k4 * Math.max(0, mach - 1.2)) : 1.0;
-  // Supersonic baseline
-  const Cx_sup = k0 + k3;
 
   if (mach < 0.8) return k0;
   if (mach < 1.2) return k0 + Cx_wave;
-  return Math.max(0.001, Cx_sup + Cx_wave * Cx_decline);
+
+  // Supersonic baseline: k3 is a shift from k0, but when k3 is large and negative
+  // (e.g. AIM-120C: k0=0.029, k3=-0.245) the naive k0+k3 goes negative.
+  // Physical floor: supersonic Cx never drops below 50% of subsonic — missile bodies
+  // always have significant friction/base drag at any speed.
+  const Cx_sup = Math.max(k0 + k3, k0 * 0.5);
+  return Math.max(k0 * 0.3, Cx_sup + Cx_wave * Cx_decline);
 }
 
 /** Drag force (N) — uses DCS Cx model when available, falls back to flat Cd */
