@@ -121,14 +121,44 @@ export interface AircraftData {
   maxSpeedKts: number;
   ceilingFt: number;
   radarGimbalDeg: number;
-  /**
-   * True if this aircraft is equipped with a Missile Approach Warning System (MAWS).
-   * In DCS, the A-10C II uses the AN/AAR-47 MAWS, which detects IR/UV missile plumes
-   * and provides coarse sector warnings for ALL missile types including IR.
-   * The F-16C and F/A-18C do not have a simulated MAWS in DCS.
-   * Standard RWR cannot detect IR missiles — only MAWS can.
-   */
   hasMaws: boolean;
+  // Energy model (optional — falls back to constant-speed if absent)
+  maxThrust_N?: number;
+  mass_kg?: number;
+  wingArea_m2?: number;
+  Cd0?: number;
+  K_induced?: number;
+  maxG?: number;
+  cornerSpeedKts?: number;
+  minSpeedKts?: number;
+  // Radar cross-section of this aircraft (m²)
+  rcs_m2?: number;
+  // Shooter radar config
+  radar?: RadarConfig;
+}
+
+export interface RadarConfig {
+  maxRange_nm: number;
+  referenceRCS_m2: number;
+  gimbalLimit_deg: number;
+  scanTime_s: number;
+  twsAccuracy_m: number;
+  sttAccuracy_m: number;
+  lookdownSpeedGate_mps: number;
+}
+
+/** Dynamic Launch Zone result computed per-frame */
+export interface WEZResult {
+  rmax_m: number;
+  nez_m: number;
+  rmin_m: number;
+}
+
+/** Pre-launch radar detection event */
+export interface DetectionEvent {
+  time: number;
+  type: 'search_detected' | 'stt_lock' | 'launch' | 'missile_active';
+  description: string;
 }
 
 // ── RWR / MAWS types ──────────────────────────────────────────────────────────

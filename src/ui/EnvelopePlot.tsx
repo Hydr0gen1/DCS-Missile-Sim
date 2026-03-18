@@ -92,13 +92,15 @@ export default function EnvelopePlot() {
 
   const envelope = useMemo(() => {
     if (!canPlot || !missile) return null;
+    const shooterAircraft = aircraft.find((a) => a.id === shooterAircraftId);
+    const targetAircraft = aircraft[targetAircraftId];
     const cfg: Omit<ScenarioConfig, 'aspectAngleDeg' | 'rangeNm'> = {
       shooterRole,
       shooterType: shooterAircraftId,
       shooterAlt,
       shooterSpeed: shooterRole === 'ground' ? 0 : shooterSpeed,
       shooterHeading,
-      targetType: aircraft[targetAircraftId]?.id ?? 'generic',
+      targetType: targetAircraft?.id ?? 'generic',
       targetAlt,
       targetSpeed,
       targetHeading,
@@ -108,6 +110,8 @@ export default function EnvelopePlot() {
       targetWaypoints: [],
       targetHasMaws,
       missile,
+      shooterAircraftData: shooterAircraft,
+      targetAircraftData: targetAircraft,
     };
     return computeEnvelope(cfg, aspects);
   }, [

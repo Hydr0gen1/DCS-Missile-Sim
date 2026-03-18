@@ -1,5 +1,5 @@
 import { airDensity, speedOfSound, NM_TO_M, M_TO_NM, FT_TO_M } from './atmosphere';
-import type { MissileData, CxCoeffs, ThrustPhase } from '../data/types';
+import type { MissileData, CxCoeffs, ThrustPhase, WEZResult } from '../data/types';
 
 export interface MissileState {
   x: number;          // m (world coords)
@@ -136,6 +136,65 @@ export function loftAltitudeDelta(
 ): number {
   const rad = (loftAngleDeg * Math.PI) / 180;
   return speedMs * Math.sin(rad) * dt * (1 / FT_TO_M); // ft
+}
+
+/**
+ * Compute Dynamic Launch Zone using DCS DLZ coefficients.
+ * Accounts for aspect angle, altitude differential, and target speed.
+ * Falls back to rough estimates when DLZ data is unavailable.
+ */
+export function computeDLZ(
+  missile: MissileData,
+  shooterAltFt: number,
+  shooterSpeedKts: number,
+  targetAltFt: number,
+  targetSpeedKts: number,
+  aspectDeg: number,       // 0 = hot (head-on), 180 = cold (tail-chase)
+): WEZResult {
+  const dlz = missile.dlz;
+  if (!dlz || dlz.headOn_10km_m === null) {
+    const maxR = estimateMaxRangeM(missile, shooterAltFt);
+    return { rmax_m: maxR, nez_m: maxR * 0.25, rmin_m: maxR * 0.05 };
+  }
+
+  const baseRmax = dlz.headOn_10km_m;
+  const REF_ALT_FT = 32808; // 10 km in ft
+
+  // Aspect factor: head-on = 1.0, tail-chase uses actual tail ratio from DLZ
+  const aspectFrac = Math.min(1, Math.max(0, aspectDeg / 180));
+  const tailRmax = dlz.tailChase_10km_m ?? baseRmax * 0.35;
+  const tailRatio = tailRmax / Math.max(baseRmax, 1);
+  const aspectFactor = 1.0 - aspectFrac * (1.0 - tailRatio);
+
+  // Altitude factor: blend between headOn_1km and headOn_10km based on altitude
+  const headOn1km = dlz.headOn_1km_m ?? baseRmax * 0.4;
+  const altBlend = Math.min(1, Math.max(0, shooterAltFt / REF_ALT_FT));
+  const altAdjustedBase = headOn1km + altBlend * (baseRmax - headOn1km);
+
+  // Hemi slope adjustment for high/low altitude
+  const altDiffFt = shooterAltFt - REF_ALT_FT;
+  const altFraction = altDiffFt / REF_ALT_FT;
+  const hemiSlope = altFraction >= 0
+    ? (dlz.upperHemiSlope ?? 2.0)
+    : (dlz.lowerHemiSlope ?? 0.3);
+  const altFactor = Math.max(0.4, 1.0 + altFraction * hemiSlope * 0.08);
+
+  // Speed contribution: faster shooter → more energy → larger envelope
+  const speedFactor = Math.max(0.7, Math.min(1.3, (shooterSpeedKts - 200) / 600 + 0.85));
+
+  const rmax = altAdjustedBase * aspectFactor * altFactor * speedFactor;
+
+  // NEZ: shrinks dramatically at cold aspect (tail-chase is uncertain)
+  const nezFraction = 0.35 - aspectFrac * 0.20; // hot=0.35, cold=0.15
+  const nez = rmax * nezFraction;
+
+  const rmin = Math.max(300, rmax * 0.03);
+
+  return {
+    rmax_m: Math.max(0, rmax),
+    nez_m: Math.max(0, nez),
+    rmin_m: rmin,
+  };
 }
 
 export { NM_TO_M, M_TO_NM };
