@@ -89,14 +89,13 @@ export function stepAircraft(
         // 90° off missile bearing (beam) + descend
         const notchRad = missileAngle + (90 * Math.PI) / 180;
         headingRad = notchRad;
-        altFt = Math.max(200, altFt - 500 * dt);
+        altFt = Math.max(200, altFt - 100 * dt); // 100 ft/s ≈ 6,000 fpm
         break;
       }
       case 'bunt': {
         // Dive and increase speed
-        headingRad = headingRad; // maintain current heading
-        altFt = Math.max(200, altFt - 1000 * dt);
-        speedMs = Math.min(speedMs * 1.001, 450); // slight acceleration
+        altFt = Math.max(200, altFt - 250 * dt); // 250 ft/s ≈ 15,000 fpm
+        speedMs = Math.min(speedMs * 1.001, 450);
         break;
       }
       case 'break': {

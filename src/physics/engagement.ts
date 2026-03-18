@@ -13,6 +13,19 @@ import type { MissileData, RWRState, RWRThreat, MAWSSector } from '../data/types
 export const DT = 0.05; // seconds per physics step
 const G = 9.80665;
 
+/**
+ * Mach-dependent drag multiplier.
+ * Models the transonic drag rise (wave drag) that peaks near Mach 1
+ * and partially subsides at supersonic speeds.
+ */
+function machDragMultiplier(mach: number): number {
+  if (mach < 0.8) return 1.0;
+  if (mach < 1.0) return 1.0 + 1.5 * ((mach - 0.8) / 0.2); // transonic rise → 2.5
+  if (mach < 1.2) return 2.5 - 0.5 * ((mach - 1.0) / 0.2);  // peak at M1, decay → 2.0
+  if (mach < 3.0) return 2.0 - 0.5 * ((mach - 1.2) / 1.8);  // supersonic decay → 1.5
+  return 1.5;
+}
+
 export interface ScenarioConfig {
   // Shooter
   shooterRole?: 'aircraft' | 'ground'; // default 'aircraft'
@@ -375,43 +388,75 @@ export function runSimulation(cfg: ScenarioConfig): {
       : massBurnout;
     const thrustForce = burning ? thrust : 0;
 
-    const fdrag = dragForce(missileState.speedMs, missileState.altFt, cd, area);
-
-    const speed = missileState.speedMs > 0 ? missileState.speedMs : 0.001;
-    const vHatX = missileState.vx / speed;
-    const vHatY = missileState.vy / speed;
-
-    const thrustAccX = (thrustForce / currentMass) * vHatX;
-    const thrustAccY = (thrustForce / currentMass) * vHatY;
-    const dragAccX = -(fdrag / currentMass) * vHatX;
-    const dragAccY = -(fdrag / currentMass) * vHatY;
-
-    let altDeltaFt = 0;
+    // ── Elevation guidance command ────────────────────────────────────────────
+    let elevCmd = 0; // rad
     if (isGroundLaunched) {
-      // Proportional elevation guidance: climb/dive toward target altitude
-      const altErrM = (guidanceTargetY === lastKnownTargetY && seduced
-        ? 0
-        : (newTarget.altFt - missileState.altFt)) * FT_TO_M;
+      const altErrM = (seduced ? 0 : (newTarget.altFt - missileState.altFt)) * FT_TO_M;
       const horizDist = Math.hypot(
         guidanceTargetX - missileState.x,
         guidanceTargetY - missileState.y,
       );
-      const elevRad = Math.atan2(altErrM, Math.max(horizDist, 100));
-      // Clamp: max 75° climb, 45° dive (SAMs can't fly straight down)
-      const clampedElev = Math.max(-Math.PI / 4, Math.min((Math.PI * 5) / 12, elevRad));
-      altDeltaFt = (missileState.speedMs * Math.sin(clampedElev) * DT) / FT_TO_M;
+      elevCmd = Math.atan2(altErrM, Math.max(horizDist, 100));
+      // Clamp: max 75° climb, 45° dive
+      elevCmd = Math.max(-Math.PI / 4, Math.min((Math.PI * 5) / 12, elevCmd));
     } else if (burning && loftAngle > 0 && range > 0.6 * maxRangeM) {
-      const vertMs = missileState.speedMs * Math.sin((loftAngle * Math.PI) / 180);
-      altDeltaFt = vertMs * DT / FT_TO_M;
+      elevCmd = (loftAngle * Math.PI) / 180;
     }
 
+    // ── 3D speed and drag ─────────────────────────────────────────────────────
+    // Horizontal speed (what guidance operates on)
+    const speed = missileState.speedMs;
+    // Total 3D speed (what aerodynamics operate on)
+    const speed3D = Math.sqrt(speed * speed + missileState.vz * missileState.vz);
+    const mach3D = speed3D / speedOfSound(missileState.altFt);
+    const machDragMult = machDragMultiplier(mach3D);
+    // Single drag force acts on total velocity vector
+    const fdrag3D = dragForce(speed3D, missileState.altFt, cd * machDragMult, area);
+
+    // ── Horizontal thrust direction ───────────────────────────────────────────
+    let vHatX: number, vHatY: number;
+    if (speed < 1.0) {
+      const launchRad = (initialHeadingDeg * Math.PI) / 180;
+      vHatX = Math.sin(launchRad);
+      vHatY = Math.cos(launchRad);
+    } else {
+      vHatX = missileState.vx / speed;
+      vHatY = missileState.vy / speed;
+    }
+
+    // ── Thrust decomposition (Newton's 3rd correctly) ─────────────────────────
+    // Thrust = F along body axis. We decompose into horizontal & vertical.
+    // cos(elev) goes to horizontal propulsion; sin(elev) goes to climb.
+    const invMass = 1 / currentMass;
+    const cosElev = Math.cos(elevCmd);
+    const sinElev = Math.sin(elevCmd);
+    const thrustAccX = thrustForce * invMass * cosElev * vHatX;
+    const thrustAccY = thrustForce * invMass * cosElev * vHatY;
+    const thrustAccZ = thrustForce * invMass * sinElev;
+
+    // ── Drag acts opposite to full 3D velocity ────────────────────────────────
+    const safeDenom = Math.max(speed3D, 0.001);
+    const dragAccX = -(fdrag3D * invMass) * (missileState.vx / safeDenom);
+    const dragAccY = -(fdrag3D * invMass) * (missileState.vy / safeDenom);
+    const dragAccZ = -(fdrag3D * invMass) * (missileState.vz / safeDenom);
+
+    // ── Integrate ─────────────────────────────────────────────────────────────
+    const newVz = missileState.vz + (thrustAccZ + dragAccZ - G) * DT;
     const newVx = missileState.vx + (ax + thrustAccX + dragAccX) * DT;
     const newVy = missileState.vy + (ay + thrustAccY + dragAccY) * DT;
     const newSpeed = Math.sqrt(newVx * newVx + newVy * newVy);
-    const newAlt = Math.max(0, missileState.altFt + altDeltaFt);
-    const energyFrac = Math.min(1, newSpeed / maxSpeedMs);
+    const newSpeed3D = Math.sqrt(newVx * newVx + newVy * newVy + newVz * newVz);
+    const newAlt = Math.max(0, missileState.altFt + (newVz * DT) / FT_TO_M);
 
-    if (newSpeed < 50) {
+    // Energy fraction uses current-altitude speed of sound for accurate Mach display
+    const maxSpeedMsNow = m.maxSpeed_mach
+      ? m.maxSpeed_mach * speedOfSound(newAlt)
+      : 1500;
+    const energyFrac = Math.min(1, newSpeed3D / maxSpeedMsNow);
+
+    // Check total 3D speed (not just horizontal) to avoid false termination
+    // during steep climb phase of SAMs
+    if (newSpeed3D < 50) {
       missReason = 'insufficient energy';
       const fdx = shooterState.x - newTarget.x;
       const fdy = shooterState.y - newTarget.y;
@@ -422,7 +467,7 @@ export function runSimulation(cfg: ScenarioConfig): {
       break;
     }
 
-    const newTrail = [...missileState.trail, { x: missileState.x, y: missileState.y }];
+    const newTrail = [...missileState.trail, { x: missileState.x, y: missileState.y, alt: missileState.altFt }];
     if (newTrail.length > 500) newTrail.shift();
 
     missileState = {
@@ -431,6 +476,7 @@ export function runSimulation(cfg: ScenarioConfig): {
       y: missileState.y + newVy * DT,
       vx: newVx,
       vy: newVy,
+      vz: newVz,
       speedMs: newSpeed,
       altFt: newAlt,
       timeFlight: time + DT,
@@ -440,7 +486,7 @@ export function runSimulation(cfg: ScenarioConfig): {
     };
 
     // Track peak speed and distance traveled
-    distanceTraveledM += newSpeed * DT;
+    distanceTraveledM += newSpeed3D * DT;
     if (newSpeed > peakSpeedMs) {
       peakSpeedMs = newSpeed;
       altAtPeakSpeed = newAlt;

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { T } from './theme';
 import { useSimStore } from '../store/simStore';
 import { validateScenario, runSimulation } from '../physics/engagement';
 import { KTS_TO_MS } from '../physics/atmosphere';
@@ -190,11 +191,11 @@ export default function PlaybackBar() {
 }
 
 function statusColor(s: string): string {
-  if (s === 'hit') return '#00ff80';
-  if (s === 'miss') return '#ff4444';
-  if (s === 'error') return '#ff8800';
-  if (s === 'running') return '#ffaa00';
-  return '#556655';
+  if (s === 'hit') return T.success;
+  if (s === 'miss') return T.danger;
+  if (s === 'error') return T.warning;
+  if (s === 'running') return T.accentBright;
+  return T.textDim;
 }
 
 function statusText(s: string, verdict?: string | null): string {
@@ -211,58 +212,66 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 6,
-    padding: '6px 12px',
-    background: '#080c08',
-    borderTop: '1px solid #1a3a1a',
-    fontFamily: 'Share Tech Mono, monospace',
+    padding: '7px 14px',
+    background: T.bgSurface,
+    borderTop: `1px solid ${T.border}`,
+    fontFamily: T.fontUI,
     fontSize: 11,
-    color: '#aaccaa',
+    color: T.text,
     flexWrap: 'wrap',
   },
   btn: {
-    background: '#0d1a0d',
-    border: '1px solid #2a4a2a',
-    color: '#aaccaa',
-    fontFamily: 'Share Tech Mono, monospace',
+    background: T.bgRaised,
+    border: `1px solid ${T.border}`,
+    color: T.text,
+    fontFamily: T.fontUI,
     fontSize: 11,
-    padding: '4px 10px',
+    fontWeight: '500',
+    padding: '4px 12px',
     cursor: 'pointer',
+    borderRadius: 4,
   },
   btnActive: {
-    background: '#1a3a1a',
-    borderColor: '#00aa44',
-    color: '#00ff80',
+    background: T.bgHover,
+    borderColor: T.accent,
+    color: T.accentBright,
   },
   launchBtn: {
-    background: '#1a0000',
-    borderColor: '#aa2222',
-    color: '#ff4444',
-    letterSpacing: 2,
-    fontWeight: 'bold',
-    padding: '4px 16px',
+    background: '#2a1010',
+    borderColor: T.danger,
+    color: T.danger,
+    letterSpacing: 1.5,
+    fontWeight: '600',
+    padding: '5px 18px',
+    borderRadius: 4,
   },
   divider: {
     width: 1,
     height: 20,
-    background: '#1a3a1a',
+    background: T.border,
     margin: '0 2px',
   },
   label: {
-    color: '#556655',
+    color: T.textDim,
     fontSize: 9,
-    letterSpacing: 1,
+    letterSpacing: 0.5,
+    fontWeight: '600',
+    textTransform: 'uppercase' as const,
   },
   slider: {
-    accentColor: '#00aa44',
+    accentColor: T.accent,
   },
   time: {
-    color: '#557755',
+    color: T.textDim,
     fontSize: 10,
     minWidth: 110,
+    fontFamily: T.fontMono,
   },
   status: {
     fontSize: 11,
-    letterSpacing: 1,
+    letterSpacing: 0.5,
     minWidth: 120,
+    fontFamily: T.fontMono,
+    fontWeight: '600',
   },
 };

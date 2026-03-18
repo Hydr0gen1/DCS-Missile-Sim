@@ -2,6 +2,7 @@ import { useSimStore } from '../store/simStore';
 import type { ShooterRole } from '../store/simStore';
 import type { ManeuverType } from '../physics/aircraft';
 import { getMissingFields } from '../physics/missile';
+import { T } from './theme';
 
 const label = (text: string, tip: string) => (
   <label title={tip} style={styles.label}>{text}</label>
@@ -96,7 +97,7 @@ export default function SetupPanel() {
         <select
           style={styles.select}
           value={aircraft[targetAircraftId]?.id ?? 'generic'}
-          onChange={(e) => setScenario({ targetAircraftId: aircraft.findIndex((a) => a.id === e.target.value) })}
+          onChange={(e) => { const idx = aircraft.findIndex((a) => a.id === e.target.value); setScenario({ targetAircraftId: idx >= 0 ? idx : 0 }); }}
         >
           {aircraft.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
@@ -229,123 +230,135 @@ function ccmLabel(k: number): string {
 }
 
 function typeColor(type: string): string {
-  if (type === 'ARH') return '#00aaff';
-  if (type === 'SARH') return '#ffaa00';
-  return '#ff6688';
+  if (type === 'ARH') return T.typeARH;
+  if (type === 'SARH') return T.typeSARH;
+  return T.typeIR;
 }
 
 const styles: Record<string, React.CSSProperties> = {
   panel: {
     width: 220,
     overflowY: 'auto',
-    padding: '8px 10px',
-    background: '#0a0e0a',
-    borderRight: '1px solid #1a3a1a',
-    fontFamily: 'Share Tech Mono, monospace',
+    padding: '10px 12px',
+    background: T.bgSurface,
+    borderRight: `1px solid ${T.border}`,
+    fontFamily: T.fontUI,
     fontSize: 11,
-    color: '#aaccaa',
+    color: T.text,
     height: '100%',
     boxSizing: 'border-box',
   },
   section: {
     marginBottom: 14,
     paddingBottom: 10,
-    borderBottom: '1px solid #1a2a1a',
+    borderBottom: `1px solid ${T.borderDim}`,
   },
   sectionTitle: {
-    color: '#00ff80',
-    fontSize: 12,
-    letterSpacing: 2,
+    color: T.accentBright,
+    fontSize: 11,
+    letterSpacing: 1.5,
     marginBottom: 6,
-    fontWeight: 'bold',
+    fontWeight: '600',
+    textTransform: 'uppercase' as const,
   },
   label: {
     display: 'block',
-    color: '#88aa88',
+    color: T.textDim,
     fontSize: 10,
     marginTop: 5,
     cursor: 'default',
+    fontWeight: '500',
   },
   slider: {
     width: '100%',
-    accentColor: '#00aa44',
+    accentColor: T.accent,
     margin: '2px 0',
   },
   select: {
     width: '100%',
-    background: '#0d1a0d',
-    border: '1px solid #2a4a2a',
-    color: '#aaccaa',
-    fontFamily: 'Share Tech Mono, monospace',
+    background: T.bgRaised,
+    border: `1px solid ${T.border}`,
+    color: T.text,
+    fontFamily: T.fontUI,
     fontSize: 11,
-    padding: '3px 4px',
+    padding: '4px 6px',
     marginTop: 3,
+    borderRadius: 3,
+    cursor: 'pointer',
   },
   roleBtn: {
     flex: 1,
     background: 'transparent',
-    border: '1px solid #1a3a1a',
-    color: '#557755',
-    fontFamily: 'Share Tech Mono, monospace',
-    fontSize: 9,
-    padding: '3px 4px',
+    border: `1px solid ${T.border}`,
+    color: T.textDim,
+    fontFamily: T.fontUI,
+    fontSize: 10,
+    fontWeight: '500',
+    padding: '4px 4px',
     cursor: 'pointer',
-    letterSpacing: 1,
+    borderRadius: 3,
   },
   roleBtnActive: {
-    background: '#0d1a0d',
-    borderColor: '#00aa44',
-    color: '#00ff80',
+    background: T.bgRaised,
+    borderColor: T.accent,
+    color: T.accentBright,
   },
   warningBox: {
-    background: '#2a1a00',
-    border: '1px solid #aa6600',
-    color: '#ffaa44',
+    background: '#2a1c10',
+    border: `1px solid ${T.accentDim}`,
+    color: T.accentBright,
     padding: '4px 6px',
     fontSize: 9,
     marginTop: 5,
     lineHeight: 1.4,
+    borderRadius: 3,
   },
   errorBox: {
-    background: '#1a0000',
-    border: '1px solid #aa2222',
-    color: '#ff6666',
+    background: '#2a1010',
+    border: `1px solid ${T.dangerDim}`,
+    color: T.danger,
     padding: '4px 6px',
     fontSize: 9,
     marginTop: 5,
     lineHeight: 1.4,
+    borderRadius: 3,
   },
   missileInfo: {
     marginTop: 6,
     fontSize: 10,
-    color: '#88aa88',
-    lineHeight: 1.6,
-    borderLeft: '2px solid #1a3a1a',
+    color: T.textDim,
+    lineHeight: 1.7,
+    borderLeft: `2px solid ${T.border}`,
     paddingLeft: 6,
+    fontFamily: T.fontMono,
   },
   cmBox: {
     marginTop: 8,
     padding: '6px 8px',
-    border: '1px solid #1a2a1a',
-    background: '#060e06',
+    border: `1px solid ${T.borderDim}`,
+    background: T.bgBase,
+    borderRadius: 4,
   },
   cmTitle: {
-    color: '#557755',
+    color: T.textDim,
     fontSize: 9,
-    letterSpacing: 2,
+    letterSpacing: 1.5,
     marginBottom: 4,
+    fontWeight: '600',
+    textTransform: 'uppercase' as const,
   },
   cmHint: {
-    color: '#446644',
+    color: T.textFaint,
     fontSize: 9,
     marginBottom: 4,
     marginLeft: 2,
   },
   ccmInfo: {
     marginTop: 4,
-    color: '#888866',
+    color: T.textFaint,
     fontSize: 9,
-    borderTop: '1px solid #1a2a1a',
+    borderTop: `1px solid ${T.borderDim}`,
     paddingTop: 4,
+    fontFamily: T.fontMono,
   },
 };
