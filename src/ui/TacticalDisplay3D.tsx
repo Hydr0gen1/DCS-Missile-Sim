@@ -9,12 +9,13 @@
  * Shooter sits at origin. Target starts down the -Z axis.
  * Free-fly camera: WASD/QE to move, hold LMB + drag to look.
  */
-import { useRef, useMemo, useEffect, useCallback } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Line, Grid } from '@react-three/drei';
 import * as THREE from 'three';
 import { useSimStore } from '../store/simStore';
 import { M_TO_NM, NM_TO_M } from '../physics/atmosphere';
+import { AircraftByType, SamByMissileId } from './AircraftModels';
 
 const FT_TO_M = 0.3048;
 
@@ -29,224 +30,6 @@ function circlePoints(cx: number, cz: number, r: number, y: number, segments = 8
     pts.push([cx + Math.cos(a) * r, y, cz + Math.sin(a) * r]);
   }
   return pts;
-}
-
-// ─── Aircraft models ────────────────────────────────────────────────────────
-
-/** A-10C Warthog — distinctive straight wings, twin rear engines, twin tails */
-function A10CMesh({ color }: { color: string }) {
-  return (
-    <group>
-      {/* Fuselage — wide, blunt nose */}
-      <mesh>
-        <boxGeometry args={[900, 700, 5200]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      {/* Nose — tapered forward section with gun */}
-      <mesh position={[0, -80, 2800]}>
-        <cylinderGeometry args={[120, 350, 1200, 6]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      {/* GAU-8 gun barrel (slightly below center) */}
-      <mesh position={[0, -200, 3600]} rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[60, 60, 900, 8]} />
-        <meshStandardMaterial color="#444" />
-      </mesh>
-      {/* Wide straight wings */}
-      <mesh position={[0, -120, 400]}>
-        <boxGeometry args={[17200, 200, 2800]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      {/* Wing leading-edge taper (left) */}
-      <mesh position={[-7600, -120, 1200]} rotation={[0, 0.18, 0]}>
-        <boxGeometry args={[2800, 180, 600]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      {/* Wing leading-edge taper (right) */}
-      <mesh position={[7600, -120, 1200]} rotation={[0, -0.18, 0]}>
-        <boxGeometry args={[2800, 180, 600]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      {/* Engine nacelle left (on rear fuselage, not wing) */}
-      <mesh position={[-1800, 600, -1200]}>
-        <cylinderGeometry args={[420, 380, 3400, 12]} />
-        <meshStandardMaterial color={color === '#ff4444' ? '#cc3333' : '#0088dd'} />
-      </mesh>
-      {/* Engine nacelle right */}
-      <mesh position={[1800, 600, -1200]}>
-        <cylinderGeometry args={[420, 380, 3400, 12]} />
-        <meshStandardMaterial color={color === '#ff4444' ? '#cc3333' : '#0088dd'} />
-      </mesh>
-      {/* Engine exhaust glow left */}
-      <mesh position={[-1800, 600, -2900]}>
-        <cylinderGeometry args={[360, 360, 200, 12]} />
-        <meshStandardMaterial color="#ff6600" emissive="#ff3300" emissiveIntensity={0.8} />
-      </mesh>
-      {/* Engine exhaust glow right */}
-      <mesh position={[1800, 600, -2900]}>
-        <cylinderGeometry args={[360, 360, 200, 12]} />
-        <meshStandardMaterial color="#ff6600" emissive="#ff3300" emissiveIntensity={0.8} />
-      </mesh>
-      {/* Twin tail boom left */}
-      <mesh position={[-2600, 200, -2200]}>
-        <boxGeometry args={[400, 300, 2200]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      {/* Twin tail boom right */}
-      <mesh position={[2600, 200, -2200]}>
-        <boxGeometry args={[400, 300, 2200]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      {/* Vertical stabilizer left */}
-      <mesh position={[-2600, 900, -3100]}>
-        <boxGeometry args={[200, 1600, 1000]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      {/* Vertical stabilizer right */}
-      <mesh position={[2600, 900, -3100]}>
-        <boxGeometry args={[200, 1600, 1000]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      {/* Horizontal stabilizer */}
-      <mesh position={[0, 280, -3000]}>
-        <boxGeometry args={[7000, 160, 1400]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-    </group>
-  );
-}
-
-/** Generic swept-wing fighter (F-16, Su-27, etc.) */
-function FighterMesh({ color }: { color: string }) {
-  return (
-    <group>
-      {/* Fuselage */}
-      <mesh>
-        <cylinderGeometry args={[200, 260, 5000, 8]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      {/* Nose cone */}
-      <mesh position={[0, 2900, 0]}>
-        <coneGeometry args={[200, 1400, 8]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      {/* Delta/swept wings */}
-      <mesh position={[0, -200, 0]} rotation={[0, 0, 0]}>
-        <boxGeometry args={[7800, 100, 2200]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      {/* Wing sweep (left leading edge) */}
-      <mesh position={[-3200, -200, 700]} rotation={[0, 0.45, 0]}>
-        <boxGeometry args={[2400, 100, 600]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      {/* Wing sweep (right leading edge) */}
-      <mesh position={[3200, -200, 700]} rotation={[0, -0.45, 0]}>
-        <boxGeometry args={[2400, 100, 600]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      {/* Horizontal tail */}
-      <mesh position={[0, -100, -2200]}>
-        <boxGeometry args={[3600, 80, 900]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      {/* Vertical tail */}
-      <mesh position={[0, 1000, -2000]}>
-        <boxGeometry args={[120, 2000, 1100]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      {/* Engine exhaust */}
-      <mesh position={[0, -2700, 0]}>
-        <cylinderGeometry args={[240, 240, 200, 10]} />
-        <meshStandardMaterial color="#ff6600" emissive="#ff3300" emissiveIntensity={0.6} />
-      </mesh>
-    </group>
-  );
-}
-
-/** S-300 / SAM site — 5P85 launcher with 48N6 missile */
-function SamSiteMesh({ color }: { color: string }) {
-  return (
-    <group>
-      {/* TEL vehicle body */}
-      <mesh position={[0, 0, 0]}>
-        <boxGeometry args={[3200, 1200, 9000]} />
-        <meshStandardMaterial color="#1a4a1a" />
-      </mesh>
-      {/* Launcher rail frame */}
-      <mesh position={[0, 2200, 800]} rotation={[0.3, 0, 0]}>
-        <boxGeometry args={[2400, 300, 6000]} />
-        <meshStandardMaterial color="#2a6a2a" />
-      </mesh>
-      {/* 4× missile canisters */}
-      {([-900, -300, 300, 900] as number[]).map((xOff, i) => (
-        <group key={i}>
-          <mesh position={[xOff, 2600, 1200]} rotation={[0.3, 0, 0]}>
-            <cylinderGeometry args={[260, 260, 5800, 8]} />
-            <meshStandardMaterial color="#3a7a3a" />
-          </mesh>
-          {/* Nose cap */}
-          <mesh position={[xOff, 3800, 3000]} rotation={[0.3, 0, 0]}>
-            <coneGeometry args={[260, 600, 8]} />
-            <meshStandardMaterial color={color} />
-          </mesh>
-        </group>
-      ))}
-      {/* Radar dish on cab */}
-      <mesh position={[0, 1800, -3500]}>
-        <cylinderGeometry args={[800, 800, 200, 12]} />
-        <meshStandardMaterial color="#888" />
-      </mesh>
-    </group>
-  );
-}
-
-// ─── Missile ─────────────────────────────────────────────────────────────────
-
-function MissileEntity({ pos, vx, vy, burning }: { pos: [number, number, number]; vx: number; vy: number; burning: boolean }) {
-  const groupRef = useRef<THREE.Group>(null);
-  const headingDeg = (Math.atan2(vx, vy) * 180) / Math.PI;
-
-  useFrame(() => {
-    if (!groupRef.current) return;
-    groupRef.current.position.set(...pos);
-    groupRef.current.rotation.set(0, -(headingDeg * Math.PI) / 180, 0);
-  });
-
-  return (
-    <group ref={groupRef}>
-      {/* Body */}
-      <mesh>
-        <cylinderGeometry args={[45, 55, 1400, 8]} />
-        <meshStandardMaterial color="#ff8800" emissive="#993300" emissiveIntensity={0.3} />
-      </mesh>
-      {/* Nose */}
-      <mesh position={[0, 800, 0]}>
-        <coneGeometry args={[65, 500, 8]} />
-        <meshStandardMaterial color="#ffcc44" emissive="#aa6600" emissiveIntensity={0.4} />
-      </mesh>
-      {/* Fins (4×) */}
-      {[0, 90, 180, 270].map((rot, i) => (
-        <mesh key={i} position={[0, -500, 0]} rotation={[0, (rot * Math.PI) / 180, 0]}>
-          <boxGeometry args={[500, 400, 40]} />
-          <meshStandardMaterial color="#cc5500" />
-        </mesh>
-      ))}
-      {/* Motor plume when burning */}
-      {burning && (
-        <mesh position={[0, -850, 0]}>
-          <coneGeometry args={[80, 600, 8]} />
-          <meshStandardMaterial
-            color="#ff4400"
-            emissive="#ff2200"
-            emissiveIntensity={2}
-            transparent
-            opacity={0.85}
-          />
-        </mesh>
-      )}
-    </group>
-  );
 }
 
 // ─── Aircraft entity (positioned + oriented) ────────────────────────────────
@@ -269,10 +52,46 @@ function AircraftEntity({
 
   return (
     <group ref={groupRef}>
-      {aircraftId === 'a-10c' ? (
-        <A10CMesh color={color} />
-      ) : (
-        <FighterMesh color={color} />
+      <AircraftByType id={aircraftId} color={color} />
+    </group>
+  );
+}
+
+// ─── Missile entity ──────────────────────────────────────────────────────────
+
+function MissileEntity({ pos, vx, vy, burning }: {
+  pos: [number, number, number]; vx: number; vy: number; burning: boolean;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  const headingDeg = (Math.atan2(vx, vy) * 180) / Math.PI;
+
+  useFrame(() => {
+    if (!groupRef.current) return;
+    groupRef.current.position.set(...pos);
+    groupRef.current.rotation.set(0, -(headingDeg * Math.PI) / 180, 0);
+  });
+
+  return (
+    <group ref={groupRef}>
+      <mesh>
+        <cylinderGeometry args={[45, 55, 1400, 8]} />
+        <meshStandardMaterial color="#ff8800" emissive="#993300" emissiveIntensity={0.3} />
+      </mesh>
+      <mesh position={[0, 800, 0]}>
+        <coneGeometry args={[65, 500, 8]} />
+        <meshStandardMaterial color="#ffcc44" emissive="#aa6600" emissiveIntensity={0.4} />
+      </mesh>
+      {[0, 90, 180, 270].map((rot, i) => (
+        <mesh key={i} position={[0, -500, 0]} rotation={[0, (rot * Math.PI) / 180, 0]}>
+          <boxGeometry args={[500, 400, 40]} />
+          <meshStandardMaterial color="#cc5500" />
+        </mesh>
+      ))}
+      {burning && (
+        <mesh position={[0, -850, 0]}>
+          <coneGeometry args={[80, 600, 8]} />
+          <meshStandardMaterial color="#ff4400" emissive="#ff2200" emissiveIntensity={2} transparent opacity={0.85} />
+        </mesh>
       )}
     </group>
   );
@@ -372,7 +191,8 @@ function SceneContent() {
     simFrames, currentFrameIdx, simStatus,
     maxRangeM, minRangeM, nezM,
     rangeNm, aspectAngleDeg, shooterRole,
-    aircraft, targetAircraftId,
+    aircraft, targetAircraftId, shooterAircraftId,
+    selectedMissileId,
   } = useSimStore();
 
   const frame = simFrames[currentFrameIdx];
@@ -472,14 +292,14 @@ function SceneContent() {
       {/* Shooter */}
       {shooterRole === 'ground' ? (
         <group position={[shooterPos[0], 0, shooterPos[2]]}>
-          <SamSiteMesh color="#00aaff" />
+          <SamByMissileId missileId={selectedMissileId} />
         </group>
       ) : (
         <AircraftEntity
           pos={shooterPos}
           headingDeg={frame?.shooter.headingDeg ?? 0}
           color="#00aaff"
-          aircraftId="fighter"
+          aircraftId={shooterAircraftId}
         />
       )}
 
@@ -488,7 +308,7 @@ function SceneContent() {
         pos={targetPos}
         headingDeg={frame?.target.headingDeg ?? 180}
         color="#ff4444"
-        aircraftId={targetAircraftDef?.id ?? 'fighter'}
+        aircraftId={targetAircraftDef?.id ?? 'generic'}
       />
 
       {/* Missile */}
