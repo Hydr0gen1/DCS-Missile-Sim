@@ -1,5 +1,5 @@
 import { airDensity, speedOfSound, NM_TO_M, M_TO_NM, FT_TO_M } from './atmosphere';
-import type { MissileData } from '../data/types';
+import type { MissileData, CxCoeffs, ThrustPhase } from '../data/types';
 
 export interface MissileState {
   x: number;          // m (world coords)
@@ -34,7 +34,30 @@ export function getMissingFields(m: MissileData): string[] {
   return required.filter((k) => m[k] === null || m[k] === undefined);
 }
 
-/** Drag force (N) */
+/**
+ * DCS 5-coefficient Mach-dependent drag model.
+ * Reconstructed from DCS Lua datamine ModelData indices 3–7.
+ *
+ * Cx(M) ≈ Cx_sub + Cx_wave_crisis × peak_factor
+ *   Subsonic:    Cx_k0
+ *   Transonic:   rises sharply by Cx_k1 peaking near M=1
+ *   Supersonic:  shifts by Cx_k3, wave crisis decays by Cx_k4
+ */
+export function getCxDCS(mach: number, cx: CxCoeffs): number {
+  const { k0, k1, k2, k3, k4 } = cx;
+  // Wave-crisis peak (Gaussian centered near M=1)
+  const Cx_wave = k1 * Math.exp(-k2 * (mach - 1.0) ** 2);
+  // Post-crisis supersonic decline
+  const Cx_decline = k4 > 0 ? Math.exp(-k4 * Math.max(0, mach - 1.2)) : 1.0;
+  // Supersonic baseline
+  const Cx_sup = k0 + k3;
+
+  if (mach < 0.8) return k0;
+  if (mach < 1.2) return k0 + Cx_wave;
+  return Math.max(0.001, Cx_sup + Cx_wave * Cx_decline);
+}
+
+/** Drag force (N) — uses DCS Cx model when available, falls back to flat Cd */
 export function dragForce(
   speedMs: number,
   altFt: number,
@@ -43,6 +66,30 @@ export function dragForce(
 ): number {
   const rho = airDensity(altFt);
   return 0.5 * rho * speedMs * speedMs * cd * areaM2;
+}
+
+/**
+ * Multi-phase thrust — returns [thrustN, currentMassKg] for time t.
+ * Falls back to flat motorBurnTime_s/thrust_N if no phases.
+ */
+export function getThrustAndMass(
+  t: number,
+  phases: ThrustPhase[],
+  initialMassKg: number,
+): [number, number] {
+  let mass = initialMassKg;
+  let elapsed = 0;
+  for (const phase of phases) {
+    if (t < elapsed + phase.duration_s) {
+      // Currently in this phase
+      const timeInPhase = t - elapsed;
+      mass -= phase.fuelFlow_kg_s * timeInPhase;
+      return [phase.thrust_N, Math.max(mass, 0.1)];
+    }
+    mass -= phase.fuelFlow_kg_s * phase.duration_s;
+    elapsed += phase.duration_s;
+  }
+  return [0, Math.max(mass, 0.1)]; // coast phase
 }
 
 /** Create initial missile state from shooter position and heading */

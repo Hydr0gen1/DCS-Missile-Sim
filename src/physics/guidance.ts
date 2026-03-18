@@ -3,6 +3,31 @@
  * a_cmd = N * Vc * LOS_dot
  * where Vc = closing velocity, LOS_dot = line-of-sight rate (rad/s)
  */
+import type { PNEntry } from '../data/types';
+
+/**
+ * Range-dependent PN gain interpolation.
+ * Uses the DCS PN_coeffs schedule: (range_m → N_gain) pairs sorted ascending.
+ * Falls back to `defaultN` when schedule is null/empty.
+ */
+export function getPNGain(rangeM: number, schedule: PNEntry[] | null | undefined, defaultN = 4.0): number {
+  if (!schedule || schedule.length === 0) return defaultN;
+  if (schedule.length === 1) return schedule[0].N;
+
+  // Handle schedule starting from range_m = 0 (single-point constant)
+  const sorted = [...schedule].sort((a, b) => a.range_m - b.range_m);
+
+  if (rangeM <= sorted[0].range_m) return sorted[0].N;
+  if (rangeM >= sorted[sorted.length - 1].range_m) return sorted[sorted.length - 1].N;
+
+  for (let i = 0; i < sorted.length - 1; i++) {
+    if (rangeM >= sorted[i].range_m && rangeM < sorted[i + 1].range_m) {
+      const t = (rangeM - sorted[i].range_m) / (sorted[i + 1].range_m - sorted[i].range_m);
+      return sorted[i].N + t * (sorted[i + 1].N - sorted[i].N);
+    }
+  }
+  return defaultN;
+}
 
 export interface GuidanceInput {
   /** Missile position (m) */

@@ -1,13 +1,52 @@
+// ── DCS-fidelity rich schema (optional — present when extracted from datamine) ─
+
+export interface CxCoeffs {
+  k0: number;   // subsonic baseline Cd
+  k1: number;   // transonic wave-crisis peak height
+  k2: number;   // transonic front steepness
+  k3: number;   // supersonic baseline shift
+  k4: number;   // post-crisis drag decline steepness
+}
+
+export interface ThrustPhase {
+  name: string;         // "accel", "march", etc.
+  duration_s: number;
+  thrust_N: number;
+  fuelFlow_kg_s: number;
+}
+
+export interface PNEntry {
+  range_m: number;
+  N: number;
+}
+
+export interface DLZ {
+  headOn_10km_m: number | null;
+  tailChase_10km_m: number | null;
+  headOn_1km_m: number | null;
+  aspectCoeff: number | null;
+  lowerHemiSlope: number | null;
+  upperHemiSlope: number | null;
+  hemiBendAngle: number | null;
+  altSlopeModifier: number | null;
+}
+
+// ── Flat missile record (simulator-facing) ────────────────────────────────────
+
 export interface MissileData {
   id: string;
   name: string;
   type: 'ARH' | 'SARH' | 'IR';
-  seeker: string;
+  seeker: string;                 // display string, e.g. "Active Radar (ARH)"
+
+  // --- Required physics fields (flat legacy) ---
   motorBurnTime_s: number | null;
   thrust_N: number | null;
   mass_kg: number | null;
   massBurnout_kg: number | null;
+  /** Subsonic Cx0 (baseline drag coefficient, replaces flat Cd for DCS model) */
   dragCoefficient: number | null;
+  /** DCS reference area (m²) used in drag formula: F = 0.5 ρ v² Cx A_ref */
   referenceArea_m2: number | null;
   maxSpeed_mach: number | null;
   maxRange_nm: number | null;
@@ -15,14 +54,65 @@ export interface MissileData {
   seekerAcquisitionRange_nm: number | null;
   loftAngle_deg: number | null;
   guidanceNav: number | null;
+
   /**
    * Countermeasure vulnerability factor (DCS ccm_k0).
    * Lower = more resistant. IR missiles: flare susceptibility. Radar: chaff susceptibility.
-   * Sourced from DCS Lua datamine where available.
    */
   ccm_k0: number | null;
+
   /** True if this is a synthetic test round, not a real weapon */
   isSynthetic?: boolean;
+
+  // --- Rich DCS-fidelity fields (optional — from datamine extraction) ---
+
+  /** Mach-dependent 5-coefficient drag model (DCS Cx polar) */
+  aerodynamics?: {
+    Cx: CxCoeffs;
+    Cy?: { k0: number; k1: number; k2: number };
+    polar_damping?: number;
+    alfa_max_rad?: number;
+  };
+
+  /** Multi-phase thrust profile (DCS accurate) */
+  propulsion?: {
+    phases: ThrustPhase[];
+    totalBurnTime_s: number | null;
+    totalFuelMass_kg: number | null;
+    massAtBurnout_kg: number | null;
+  };
+
+  /** Guidance system data */
+  guidance?: {
+    /** Range-dependent PN gain schedule (null = use flat guidanceNav) */
+    pn_schedule: PNEntry[] | null;
+    autopilot?: {
+      delay_s: number | null;
+      loft_active: boolean;
+      loft_sin: number | null;
+      loft_off_range_m: number | null;
+      fins_limit: number | null;
+      gload_limit: number | null;
+      Knav: number | null;
+    } | null;
+    controlDelay_s?: number | null;
+  };
+
+  /** Loft guidance parameters */
+  loft?: {
+    triggerRange_m: number | null;
+    descentRange_m: number | null;
+    elevationSin: number | null;
+    elevationDeg: number | null;
+  };
+
+  /** Dynamic Launch Zone values (exact DCS HUD data) */
+  dlz?: DLZ;
+
+  /** DCS source metadata */
+  dcsName?: string;
+  sourceFile?: string;
+  dcsVersion?: string;
 }
 
 export interface AircraftData {

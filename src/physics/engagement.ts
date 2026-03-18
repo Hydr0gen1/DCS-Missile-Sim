@@ -3,9 +3,9 @@
  * dt = 0.05s
  */
 import { airDensity, speedOfSound, NM_TO_M, M_TO_NM, FT_TO_M } from './atmosphere';
-import { dragForce, createMissileState, estimateMaxRangeM, getMissingFields } from './missile';
+import { dragForce, getCxDCS, getThrustAndMass, createMissileState, estimateMaxRangeM, getMissingFields } from './missile';
 import type { MissileState } from './missile';
-import { proportionalNav, clampAcceleration } from './guidance';
+import { proportionalNav, clampAcceleration, getPNGain } from './guidance';
 import { createAircraftState, stepAircraft } from './aircraft';
 import type { AircraftState, ManeuverType } from './aircraft';
 import type { MissileData, RWRState, RWRThreat, MAWSSector } from '../data/types';
@@ -35,11 +35,11 @@ function closestApproachDist(
 }
 
 /**
- * Mach-dependent drag multiplier.
+ * Fallback Mach-dependent drag multiplier (used when DCS Cx model is unavailable).
  * Models the transonic drag rise (wave drag) that peaks near Mach 1
  * and partially subsides at supersonic speeds.
  */
-function machDragMultiplier(mach: number): number {
+function machDragMultiplierFallback(mach: number): number {
   if (mach < 0.8) return 1.0;
   if (mach < 1.0) return 1.0 + 1.5 * ((mach - 0.8) / 0.2); // transonic rise → 2.5
   if (mach < 1.2) return 2.5 - 0.5 * ((mach - 1.0) / 0.2);  // peak at M1, decay → 2.0
@@ -208,16 +208,28 @@ export function runSimulation(cfg: ScenarioConfig): {
   let fPoleNm = 0;
   let activeRecorded = false;
 
-  const burnTime = m.motorBurnTime_s!;
+  // ── Use multi-phase propulsion if available, else fall back to flat fields ─
+  const propPhases = m.propulsion?.phases ?? [];
+  const useMultiPhase = propPhases.length > 0 &&
+    propPhases.every((p) => p.thrust_N != null && p.duration_s != null);
+  const burnTime = useMultiPhase
+    ? (m.propulsion!.totalBurnTime_s ?? m.motorBurnTime_s!)
+    : m.motorBurnTime_s!;
+  // Used only in fallback single-phase path:
   const thrust = m.thrust_N!;
   const mass = m.mass_kg!;
-  const massBurnout = m.massBurnout_kg!;
+  const massBurnout = m.massBurnout_kg ?? (m.propulsion?.massAtBurnout_kg ?? mass * 0.7);
+  // ── Use DCS Cx model when available, else flat Cd with transonic multiplier ─
+  const cxModel = m.aerodynamics?.Cx ?? null;
   const cd = m.dragCoefficient!;
   const area = m.referenceArea_m2!;
   const gLimit = m.gLimit ?? 40;
+  // ── Use range-dependent PN schedule when available ─────────────────────────
+  const pnSchedule = m.guidance?.pn_schedule ?? null;
   const navN = m.guidanceNav ?? 4;
   const seekerRangeM = (m.seekerAcquisitionRange_nm ?? 10) * NM_TO_M;
-  const loftAngle = m.loftAngle_deg ?? 0;
+  // Prefer loft from DCS loft block, fall back to flat loftAngle_deg
+  const loftAngle = m.loft?.elevationDeg ?? m.loftAngle_deg ?? 0;
   // ccm_k0: lower = more resistant to CM. null treated as 0.3 (moderate).
   const ccmK0 = m.ccm_k0 ?? 0.3;
   const hasMaws = cfg.targetHasMaws ?? false;
@@ -386,14 +398,16 @@ export function runSimulation(cfg: ScenarioConfig): {
     const guidanceTargetX = seduced ? lastKnownTargetX : newTarget.x;
     const guidanceTargetY = seduced ? lastKnownTargetY : newTarget.y;
 
-    // Proportional nav
+    // Proportional nav — use range-dependent PN gain when available
+    const currentRange2D = Math.hypot(guidanceTargetX - missileState.x, guidanceTargetY - missileState.y);
+    const currentNavN = getPNGain(currentRange2D, pnSchedule, navN);
     const guidOut = proportionalNav({
       mx: missileState.x, my: missileState.y,
       mvx: missileState.vx, mvy: missileState.vy,
       tx: guidanceTargetX, ty: guidanceTargetY,
       tvx: seduced ? 0 : newTarget.vx,
       tvy: seduced ? 0 : newTarget.vy,
-      navConst: navN,
+      navConst: currentNavN,
     });
 
     const { range, closingVelocity } = seduced
@@ -408,11 +422,18 @@ export function runSimulation(cfg: ScenarioConfig): {
     const gLoad = Math.sqrt(ax * ax + ay * ay) / G;
     if (gLoad > peakGLoad) peakGLoad = gLoad;
 
+    // ── Thrust and mass: multi-phase if available, else linear burnout model ─
+    let currentMass: number;
+    let thrustForce: number;
     const burning = time < burnTime;
-    const currentMass = burning
-      ? mass - (mass - massBurnout) * (time / burnTime)
-      : massBurnout;
-    const thrustForce = burning ? thrust : 0;
+    if (useMultiPhase) {
+      const [thr, mss] = getThrustAndMass(time, propPhases, mass);
+      thrustForce = thr;
+      currentMass = mss;
+    } else {
+      currentMass = burning ? mass - (mass - massBurnout) * (time / burnTime) : massBurnout;
+      thrustForce = burning ? thrust : 0;
+    }
 
     // ── Elevation guidance command ────────────────────────────────────────────
     let elevCmd = 0; // rad
@@ -449,9 +470,12 @@ export function runSimulation(cfg: ScenarioConfig): {
     // Total 3D speed (what aerodynamics operate on)
     const speed3D = Math.sqrt(speed * speed + missileState.vz * missileState.vz);
     const mach3D = speed3D / speedOfSound(missileState.altFt);
-    const machDragMult = machDragMultiplier(mach3D);
+    // Use DCS Cx model when available (more accurate transonic/supersonic drag)
+    const effectiveCd = cxModel
+      ? getCxDCS(mach3D, cxModel)
+      : cd * machDragMultiplierFallback(mach3D);
     // Single drag force acts on total velocity vector
-    const fdrag3D = dragForce(speed3D, missileState.altFt, cd * machDragMult, area);
+    const fdrag3D = dragForce(speed3D, missileState.altFt, effectiveCd, area);
 
     // ── Horizontal thrust direction ───────────────────────────────────────────
     let vHatX: number, vHatY: number;
