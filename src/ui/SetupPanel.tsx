@@ -15,7 +15,7 @@ export default function SetupPanel() {
     shooterRole, setShooterRole,
     shooterAircraftId, shooterAlt, shooterSpeed, shooterHeading,
     targetAircraftId, targetAlt, targetSpeed, targetHeading,
-    targetManeuver, targetChaffCount, targetFlareCount,
+    targetManeuver, targetChaffCount, targetFlareCount, targetReactOnDetect,
     rangeNm, aspectAngleDeg, selectedMissileId,
     setScenario,
   } = store;
@@ -117,7 +117,7 @@ export default function SetupPanel() {
           onChange={(e) => setScenario({ targetHeading: +e.target.value })}
           style={styles.slider} />
 
-        {label('Defensive Maneuver', 'Target defensive response after missile goes active')}
+        {label('Defensive Maneuver', 'Target defensive response to the missile threat')}
         <select
           style={styles.select}
           value={targetManeuver}
@@ -130,6 +130,19 @@ export default function SetupPanel() {
           <option value="break">Break Turn (Max-G perp.)</option>
           <option value="custom">Custom Waypoints (click map)</option>
         </select>
+
+        <label
+          title="When enabled the target flies straight until its RWR detects radar lock (SARH/ARH) or MAWS detects the motor plume (IR). Simulates a surprise shot or pop-up engagement."
+          style={{ ...styles.label, display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, cursor: 'pointer' }}
+        >
+          <input
+            type="checkbox"
+            checked={targetReactOnDetect}
+            onChange={(e) => setScenario({ targetReactOnDetect: e.target.checked })}
+            style={{ accentColor: T.accent }}
+          />
+          React only after RWR/MAWS detection
+        </label>
 
         <div style={styles.cmBox}>
           <div style={styles.cmTitle}>COUNTERMEASURES</div>

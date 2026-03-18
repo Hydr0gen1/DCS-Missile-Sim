@@ -46,6 +46,8 @@ export interface ScenarioConfig {
   targetWaypoints: Array<{ x: number; y: number }>;
   /** True if target aircraft is equipped with MAWS (AN/AAR-47/56/57 etc.) */
   targetHasMaws: boolean;
+  /** If true, target only executes maneuver after RWR/MAWS detects the threat */
+  targetReactOnDetect?: boolean;
   // Initial geometry
   rangeNm: number;
   aspectAngleDeg: number;   // 0=hot, 180=cold
@@ -198,6 +200,16 @@ export function runSimulation(cfg: ScenarioConfig): {
   // ccm_k0: lower = more resistant to CM. null treated as 0.3 (moderate).
   const ccmK0 = m.ccm_k0 ?? 0.3;
   const hasMaws = cfg.targetHasMaws ?? false;
+  const reactOnDetect = cfg.targetReactOnDetect ?? false;
+
+  // MAWS can detect motor plumes within ~6nm (11112m). Real AN/AAR-56/57 spec.
+  const MAWS_DETECT_RANGE_M = 11112;
+
+  // Threat detection state (used when reactOnDetect=true)
+  // SARH: FCR lock is immediately detectable on RWR
+  // ARH: detected when seeker goes active (ARH seeker pings the target)
+  // IR: detected by MAWS when missile motor burns within MAWS range, else never
+  let threatDetectedByTarget = m.type === 'SARH'; // SARH → detected at launch
 
   const maxTime = 300;
   let time = 0;
@@ -233,28 +245,16 @@ export function runSimulation(cfg: ScenarioConfig): {
   }
 
   while (time < maxTime) {
-    const newTarget = stepAircraft(
-      targetState, DT,
-      missileState.x, missileState.y,
-      missileState.active,
-    );
-
-    // Track last known target position when seeker is active
-    if (missileState.active && !seduced) {
-      lastKnownTargetX = newTarget.x;
-      lastKnownTargetY = newTarget.y;
-    }
-
-    // --- Seeker activation ---
-    const dxSk = newTarget.x - missileState.x;
-    const dySk = newTarget.y - missileState.y;
+    // --- Seeker activation (before stepAircraft so detection can gate maneuver) ---
+    const dxSk = targetState.x - missileState.x;
+    const dySk = targetState.y - missileState.y;
     const rangeSk = Math.sqrt(dxSk * dxSk + dySk * dySk);
 
     if (!missileState.active && (m.type === 'ARH' || m.type === 'IR') && rangeSk <= seekerRangeM) {
       missileState = { ...missileState, active: true };
       if (!activeRecorded) {
-        const ssDx = shooterState.x - newTarget.x;
-        const ssDy = shooterState.y - newTarget.y;
+        const ssDx = shooterState.x - targetState.x;
+        const ssDy = shooterState.y - targetState.y;
         aPoleNm = Math.sqrt(ssDx * ssDx + ssDy * ssDy) * M_TO_NM;
         activeRecorded = true;
       }
@@ -265,6 +265,31 @@ export function runSimulation(cfg: ScenarioConfig): {
         aPoleNm = cfg.rangeNm;
         activeRecorded = true;
       }
+    }
+
+    // --- Threat detection (for react-on-detect feature) ---
+    if (!threatDetectedByTarget) {
+      if (m.type === 'ARH' && missileState.active) {
+        // ARH seeker pings target → RWR spike
+        threatDetectedByTarget = true;
+      } else if (m.type === 'IR' && hasMaws && rangeSk <= MAWS_DETECT_RANGE_M) {
+        // MAWS detects motor plume within 6nm
+        threatDetectedByTarget = true;
+      }
+    }
+
+    // --- Step target aircraft (with threat-gated maneuvering) ---
+    const newTarget = stepAircraft(
+      targetState, DT,
+      missileState.x, missileState.y,
+      missileState.active,
+      !reactOnDetect || threatDetectedByTarget,
+    );
+
+    // Track last known target position when seeker is active
+    if (missileState.active && !seduced) {
+      lastKnownTargetX = newTarget.x;
+      lastKnownTargetY = newTarget.y;
     }
 
     // --- Countermeasure dispensing & seduction check ---
@@ -363,7 +388,9 @@ export function runSimulation(cfg: ScenarioConfig): {
     );
 
     // Hit detection (only when not seduced)
-    if (!seduced && range3D < 20) {
+    // 75 m kill radius covers proximity-fuze lethal range and prevents
+    // fast missiles from stepping over the 20 m threshold at DT=0.05 s.
+    if (!seduced && range3D < 75) {
       hitDetected = true;
       const fdx = shooterState.x - newTarget.x;
       const fdy = shooterState.y - newTarget.y;
@@ -484,6 +511,27 @@ export function runSimulation(cfg: ScenarioConfig): {
       energy: energyFrac,
       trail: newTrail,
     };
+
+    // Second hit check using UPDATED missile position — catches missiles that
+    // step over the target (old pos outside 75 m, new pos inside 75 m).
+    if (!seduced && !hitDetected) {
+      const dAltM2 = (missileState.altFt - newTarget.altFt) * FT_TO_M;
+      const range3D2 = Math.sqrt(
+        (newTarget.x - missileState.x) ** 2 +
+        (newTarget.y - missileState.y) ** 2 +
+        dAltM2 * dAltM2,
+      );
+      if (range3D2 < 75) {
+        hitDetected = true;
+        const fdx2 = shooterState.x - newTarget.x;
+        const fdy2 = shooterState.y - newTarget.y;
+        fPoleNm = Math.sqrt(fdx2 * fdx2 + fdy2 * fdy2) * M_TO_NM;
+        if (!activeRecorded) aPoleNm = fPoleNm;
+        const rwrHit2 = computeRWR(newTarget, shooterState, missileState, m, seekerRangeM, hasMaws);
+        frames.push(buildFrame(time + DT, missileState, shooterState, newTarget, isGroundLaunched ? range3D2 : range, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrHit2));
+        break;
+      }
+    }
 
     // Track peak speed and distance traveled
     distanceTraveledM += newSpeed3D * DT;
@@ -659,7 +707,7 @@ function computeRWR(
 
   // --- RWR: radar threats only (IR missiles have no entry here) ---
   if (missileData.type === 'SARH') {
-    // Shooter continuously illuminates target — show from shooter bearing
+    // Shooter continuously illuminates target with CW radar — always detectable
     radarThreats.push({
       bearing: relBearing(shooter.x, shooter.y),
       type: missile.active ? 'launch' : 'track',
@@ -668,15 +716,16 @@ function computeRWR(
     });
   } else if (missileData.type === 'ARH') {
     if (!missile.active) {
-      // Pre-active: show dim search strobe from shooter direction
+      // Pre-active: FCR is in STT/TWS tracking mode to provide mid-course guidance.
+      // Target RWR sees the tracking radar from shooter bearing (track, not launch).
       radarThreats.push({
         bearing: relBearing(shooter.x, shooter.y),
-        type: 'search',
+        type: 'track',
         label: shortLabel,
-        intensity: 0.3,
+        intensity: Math.min(0.7, 30000 / Math.max(shooterRangeM, 1000)),
       });
     } else {
-      // Seeker active: show strong active strobe from missile direction
+      // Seeker active: missile pings target directly — ACTIVE spike from missile bearing
       radarThreats.push({
         bearing: relBearing(missile.x, missile.y),
         type: 'active',
@@ -687,9 +736,10 @@ function computeRWR(
   }
   // IR missiles: no radar signature — radarThreats stays empty
 
-  // --- MAWS: UV/IR plume detection (all types, only if equipped) ---
+  // --- MAWS: UV/IR plume detection only within realistic sensor range (~6nm) ---
+  const MAWS_RANGE_M = 11112; // ~6nm, AN/AAR-56/57 spec
   const mawsActive: MAWSSector[] = [];
-  const mawsWarning = hasMaws && missile.motorBurning;
+  const mawsWarning = hasMaws && missile.motorBurning && missileRangeM <= MAWS_RANGE_M;
   if (mawsWarning) {
     const missileBearing = relBearing(missile.x, missile.y);
     // 8 sectors of 45° each, sector 0 = forward arc
@@ -702,7 +752,7 @@ function computeRWR(
     mawsWarning,
     mawsSectors: mawsActive,
     radarWarning: missileData.type === 'SARH' || (missileData.type === 'ARH' && missile.active),
-    launchWarning: missile.active && missileData.type !== 'IR',
+    launchWarning: missile.active && missileData.type === 'ARH',
   };
 }
 

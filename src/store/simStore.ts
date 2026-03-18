@@ -31,6 +31,8 @@ interface SimStore {
   targetWaypoints: Array<{ x: number; y: number }>;
   /** Derived from the selected target aircraft's hasMaws field */
   targetHasMaws: boolean;
+  /** If true, target does not react to the missile until RWR or MAWS detects it */
+  targetReactOnDetect: boolean;
   rangeNm: number;
   aspectAngleDeg: number;
   selectedMissileId: string;
@@ -97,6 +99,7 @@ export const useSimStore = create<SimStore>((set) => ({
   targetFlareCount: 0,
   targetWaypoints: [],
   targetHasMaws: false,
+  targetReactOnDetect: false,
   rangeNm: 20,
   aspectAngleDeg: 0,
   selectedMissileId: 'test-round',

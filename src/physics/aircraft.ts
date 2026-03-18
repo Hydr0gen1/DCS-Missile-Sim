@@ -64,6 +64,7 @@ export function stepAircraft(
   missileX: number,
   missileY: number,
   missileActive: boolean,
+  threatDetected: boolean = true, // target has detected the threat via RWR/MAWS
 ): AircraftState {
   let { x, y, vx, vy, altFt, speedMs, headingDeg, maneuver, waypointIdx, waypoints } = state;
 
@@ -75,7 +76,7 @@ export function stepAircraft(
   const dyM = missileY - y;
   const rangeMissile = Math.sqrt(dxM * dxM + dyM * dyM);
 
-  if (missileActive && maneuver !== 'none' && maneuver !== 'custom') {
+  if (missileActive && threatDetected && maneuver !== 'none' && maneuver !== 'custom') {
     const missileAngle = Math.atan2(dxM, dyM);
 
     switch (maneuver) {
