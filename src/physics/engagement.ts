@@ -241,10 +241,14 @@ export function runSimulation(cfg: ScenarioConfig): {
   const seekerRangeM = (m.seekerAcquisitionRange_nm ?? 10) * NM_TO_M;
   // Prefer loft from DCS loft block, fall back to flat loftAngle_deg
   const loftAngle = m.loft?.elevationDeg ?? m.loftAngle_deg ?? 0;
+  const loftTriggerM = m.loft?.triggerRange_m ?? null;   // DCS ModelData[39]
+  const loftDescentM = m.loft?.descentRange_m ?? null;   // DCS ModelData[40]
   // ccm_k0: lower = more resistant to CM. null treated as 0.3 (moderate).
   const ccmK0 = m.ccm_k0 ?? 0.3;
   const hasMaws = cfg.targetHasMaws ?? false;
   const reactOnDetect = cfg.targetReactOnDetect ?? false;
+  // DCS ModelData[38]: fins-locked ballistic phase after launch before guidance activates
+  const controlDelay = m.guidance?.controlDelay_s ?? m.guidance?.autopilot?.delay_s ?? 0;
 
   // MAWS can detect motor plumes within ~6nm (11112m). Real AN/AAR-56/57 spec.
   const MAWS_DETECT_RANGE_M = 11112;
@@ -254,6 +258,16 @@ export function runSimulation(cfg: ScenarioConfig): {
   // ARH: detected when seeker goes active (ARH seeker pings the target)
   // IR: detected by MAWS when missile motor burns within MAWS range, else never
   let threatDetectedByTarget = m.type === 'SARH'; // SARH → detected at launch
+
+  // targetShouldManeuver: decoupled from seeker-active state.
+  // - SARH/ARH without reactOnDetect: pilot sees STT/TWS lock on RWR → maneuver starts at launch.
+  // - ARH with reactOnDetect: only once ARH seeker goes active (pitbull).
+  // - IR without MAWS: pilot can't detect the threat — but if a maneuver is set they're pre-planned.
+  // - IR with MAWS + reactOnDetect: only once MAWS detects the plume.
+  const maneuverIsPrePlanned = !reactOnDetect;
+  let targetShouldManeuver = maneuverIsPrePlanned && m.type !== 'IR'
+    ? true  // SARH/ARH: pilot sees radar lock on RWR immediately at launch
+    : false; // IR or react-on-detect: wait for detection event
 
   const maxTime = 300;
   let time = 0;
@@ -351,9 +365,26 @@ export function runSimulation(cfg: ScenarioConfig): {
       if (m.type === 'ARH' && missileState.active) {
         // ARH seeker pings target → RWR spike
         threatDetectedByTarget = true;
-      } else if (m.type === 'IR' && hasMaws && rangeSk <= MAWS_DETECT_RANGE_M) {
-        // MAWS detects motor plume within 6nm
+      } else if (m.type === 'IR' && hasMaws && missileState.motorBurning && rangeSk <= MAWS_DETECT_RANGE_M) {
+        // MAWS detects UV/IR motor plume within 6nm — coasting missiles have no plume
         threatDetectedByTarget = true;
+      }
+    }
+
+    // --- Update maneuver gate based on detection events ---
+    if (!targetShouldManeuver) {
+      if (reactOnDetect) {
+        // Only maneuver once the target has detected the specific threat
+        if (m.type === 'IR') {
+          // IR: MAWS detection gates maneuver (already latched in threatDetectedByTarget)
+          targetShouldManeuver = hasMaws && threatDetectedByTarget;
+        } else {
+          // ARH/SARH: seeker active = RWR active spike → maneuver
+          targetShouldManeuver = missileState.active;
+        }
+      } else if (m.type === 'IR') {
+        // IR without reactOnDetect: maneuver immediately (pre-planned defensive posture)
+        targetShouldManeuver = true;
       }
     }
 
@@ -361,7 +392,7 @@ export function runSimulation(cfg: ScenarioConfig): {
     const newTarget = stepAircraft(
       targetState, DT,
       missileState.x, missileState.y,
-      missileState.active,
+      targetShouldManeuver,
       !reactOnDetect || threatDetectedByTarget,
       cfg.targetAircraftData,
     );
@@ -444,7 +475,7 @@ export function runSimulation(cfg: ScenarioConfig): {
     // --- Re-acquisition after seduction ---
     if (seduced && time >= seductionEndTime && rangeSk <= seekerRangeM * 1.5) {
       seduced = false;
-      cmEventThisFrame = { type: 'reacquired', probability: 1.0, cm: missileState.active ? 'chaff' : 'flare' };
+      cmEventThisFrame = { type: 'reacquired', probability: 1.0, cm: m.type === 'IR' ? 'flare' : 'chaff' };
     }
 
     // Seduced missile homes on last known position (or flies blind)
@@ -478,9 +509,19 @@ export function runSimulation(cfg: ScenarioConfig): {
         tzGuide = seduced ? mzM : tzActual;
       }
     } else {
-      // Air-launched: loft during boost at long range, else guide to actual target altitude
-      if (burning && loftAngle > 0 && horizDistE > maxRangeM * 0.25) {
-        tzGuide = tzActual + Math.sin((loftAngle * Math.PI) / 180) * horizDistE;
+      // Air-launched: loft using DCS trigger/descent ranges (range-gated, not burn-gated)
+      const loftSin = Math.sin((loftAngle * Math.PI) / 180);
+      const effectiveTriggerM = loftTriggerM ?? maxRangeM * 0.5;
+      const effectiveDescentM = loftDescentM ?? maxRangeM * 0.25;
+      if (loftAngle > 0 && horizDistE > effectiveDescentM) {
+        if (horizDistE >= effectiveTriggerM) {
+          // Full climbing phase
+          tzGuide = tzActual + loftSin * horizDistE;
+        } else {
+          // Descending transition between trigger and descent range
+          const blend = (horizDistE - effectiveDescentM) / Math.max(1, effectiveTriggerM - effectiveDescentM);
+          tzGuide = tzActual + loftSin * horizDistE * blend;
+        }
       } else {
         tzGuide = seduced ? mzM : tzActual;
       }
@@ -507,9 +548,15 @@ export function runSimulation(cfg: ScenarioConfig): {
       ? { range: Math.sqrt(dxSk * dxSk + dySk * dySk), closingVelocity: 0 }
       : guidOut;
 
-    let { ax, ay, az, limited } = clampAcceleration(guidOut.ax, guidOut.ay, guidOut.az, gLimit, missileState.speedMs);
-    if (limited && !seduced) {
-      missReason = 'insufficient maneuverability';
+    let ax: number, ay: number, az: number, limited: boolean;
+    if (time < controlDelay) {
+      // Ballistic phase: fins locked, no guidance
+      ax = 0; ay = 0; az = 0; limited = false;
+    } else {
+      ({ ax, ay, az, limited } = clampAcceleration(guidOut.ax, guidOut.ay, guidOut.az, gLimit, missileState.speedMs));
+      if (limited && !seduced) {
+        missReason = 'insufficient maneuverability';
+      }
     }
     // Track peak lateral G-load from guidance commands
     const gLoad = Math.sqrt(ax * ax + ay * ay + az * az) / G;
@@ -554,7 +601,6 @@ export function runSimulation(cfg: ScenarioConfig): {
     const newVz = missileState.vz + (az + thrustAccZ + dragAccZ - G) * DT;
     const newVx = missileState.vx + (ax + thrustAccX + dragAccX) * DT;
     const newVy = missileState.vy + (ay + thrustAccY + dragAccY) * DT;
-    const newSpeed = Math.sqrt(newVx * newVx + newVy * newVy);
     const newSpeed3D = Math.sqrt(newVx * newVx + newVy * newVy + newVz * newVz);
     const newAlt = Math.max(0, missileState.altFt + (newVz * DT) / FT_TO_M);
 
@@ -614,7 +660,7 @@ export function runSimulation(cfg: ScenarioConfig): {
       vx: newVx,
       vy: newVy,
       vz: newVz,
-      speedMs: newSpeed,
+      speedMs: newSpeed3D,   // true 3D airspeed (not horizontal-only)
       altFt: newAlt,
       timeFlight: time + DT,
       motorBurning: burning,
@@ -624,8 +670,8 @@ export function runSimulation(cfg: ScenarioConfig): {
 
     // Track peak speed and distance traveled
     distanceTraveledM += newSpeed3D * DT;
-    if (newSpeed > peakSpeedMs) {
-      peakSpeedMs = newSpeed;
+    if (newSpeed3D > peakSpeedMs) {
+      peakSpeedMs = newSpeed3D;
       altAtPeakSpeed = newAlt;
     }
 
@@ -675,7 +721,7 @@ export function runSimulation(cfg: ScenarioConfig): {
   const mdx = lastMissile.x - targetState.x;
   const mdy = lastMissile.y - targetState.y;
   const mdAltM = (lastMissile.altFt - targetState.altFt) * FT_TO_M;
-  const missDistance = Math.sqrt(mdx * mdx + mdy * mdy + (isGroundLaunched ? mdAltM * mdAltM : 0));
+  const missDistance = Math.sqrt(mdx * mdx + mdy * mdy + mdAltM * mdAltM);
 
   const pk = computePk({
     hit: hitDetected,

@@ -72,16 +72,23 @@ DCS World ──► Quaggles datamine ──► tools/dcs_data_extractor.py ─�
 ```
 Per tick:
   1. Seeker activation check (ARH/IR: range gate; SARH: immediate)
-  2. Threat detection (gates target maneuver if targetReactOnDetect=true)
-  3. stepAircraft → newTarget
-  4. Countermeasure dispensing + seduction check
-  5. Guidance: getPNGain(range, pn_schedule) → proportionalNav → ax, ay
-  6. Thrust & mass: getThrustAndMass(t, phases) or linear burnout fallback
-  7. Elevation command: loft (air) or steep-launch (ground) or altitude homing
-  8. Drag: getCxDCS(mach, Cx) × A_ref (or fallback multiplier)
-  9. Integrate: newVx, newVy, newVz, newAlt
-  10. CPA hit detection: closestApproachDist(oldPos→newPos vs target) < 8m
-  11. Ground-strike check (post-burnout)
+  2. Radar detection timeline (shooter radar → search_detected → stt_lock events)
+  3. Threat detection (gates targetShouldManeuver flag via MAWS/RWR — decoupled from seeker-active)
+  4. targetShouldManeuver update:
+       SARH/ARH without reactOnDetect → true at launch (pilot sees STT lock on RWR)
+       ARH with reactOnDetect → true when seeker goes active (pitbull)
+       IR without MAWS → true immediately (pre-planned defensive posture)
+       IR with MAWS + reactOnDetect → true when MAWS detects burning motor plume
+  5. stepAircraft(shouldManeuver, ...) → newTarget  [maneuver gate decoupled from seeker state]
+  6. Countermeasure dispensing + seduction check (DCS k3-k11 Doppler model)
+  7. Virtual target altitude: loft (DCS trigger/descent ranges) or SAM steep-launch or terminal
+  8. Guidance: getPNGain(range, pn_schedule) → proportionalNav → ax, ay, az
+       if time < controlDelay: ax=ay=az=0 (ballistic phase, fins locked)
+  9. Thrust & mass: getThrustAndMass(t, phases) or linear burnout fallback
+  10. Drag: getCxDCS(mach, Cx) × A_ref (or fallback multiplier)
+  11. Integrate: newVx, newVy, newVz, newAlt; speedMs = sqrt(vx²+vy²+vz²) [true 3D airspeed]
+  12. CPA hit detection: closestApproachDist(oldPos→newPos vs target) < 8m
+  13. Ground-strike check (post-burnout)
   12. Accumulate: trail, peak speed/G, distance
 ```
 
@@ -258,7 +265,11 @@ SD-10 and PL-12 use full schedule: `[12km:1.0, 18km:0.75, 30km:0.5, 48km:0.2]`
 
 Without CPA, a Mach 4 missile (68 m/step at DT=0.05s) would miss a 8m target every time.
 
-### 5. Elevation Guidance (3D Homing)
+### 5. Guidance Control Delay
+
+Some missiles fly ballistically after launch before guidance activates (fins locked). Read from `guidance.controlDelay_s` or `guidance.autopilot.delay_s` (DCS ModelData[38]). During `time < controlDelay`, `ax = ay = az = 0`; thrust still applies along velocity. This reduces effectiveness at very short ranges and off-boresight shots.
+
+### 6. Elevation Guidance (3D Homing)
 
 Air-launched missiles actively steer toward target altitude in all phases:
 - During boost (loftAngle > 0): pitch up at specified loft angle
@@ -312,6 +323,9 @@ All three components `(ax, ay, az)` are produced by `proportionalNav()` and clam
 
 **Loft / SAM steep launch** — handled via virtual target altitude instead of thrust tilting:
 - Loft phase: `tz_guide = targetAlt + sin(loftAngle) * horizDist` → PN naturally pitches up.
+  - Loft is **range-gated**, not burn-time-gated: DCS `loft.triggerRange_m` / `loft.descentRange_m` used when available; falls back to 50%/25% of Rmax.
+  - Between trigger and descent range: linear blend from full loft altitude down to target altitude.
+  - Loft continues during coast (missiles loft for energy efficiency, not just during burn).
 - SAM steep phase (first 20% of burn, climbing): `tz_guide = missileAlt + 6000 m` → PN commands maximum climb.
 - Terminal phase: `tz_guide = actualTargetAlt`.
 
@@ -342,7 +356,7 @@ All three components `(ax, ay, az)` are produced by `proportionalNav()` and clam
 
 5. **DataMine patch tracking**: DCS patches change ModelData values (thrust, Cx, DLZ). Run `--update --diff` after each DCS patch to catch changes.
 
-6. **True 3D ProNav**: Current guidance is 2D horizontal ProNav + separate elevation command. True 3D ProNav (with LOS rate in elevation plane) would improve accuracy for large altitude-differential engagements.
+6. ~~**True 3D ProNav**~~: Resolved — guidance upgraded to full 3D PN with LOS angular velocity vector `Ω = (R×V_rel)/|R|²` producing `(ax, ay, az)` guidance commands. Loft and SAM steep-launch handled via virtual target altitude offsets.
 
 ---
 
