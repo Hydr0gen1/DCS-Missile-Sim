@@ -274,7 +274,11 @@ Without CPA, a Mach 4 missile (68 m/step at DT=0.05s) would miss a 8m target eve
 
 ### 5. Guidance Control Delay
 
-Some missiles fly ballistically after launch before guidance activates (fins locked). Read from `guidance.controlDelay_s` or `guidance.autopilot.delay_s` (DCS ModelData[38]). During `time < controlDelay`, `ax = ay = az = 0`; thrust still applies along velocity. This reduces effectiveness at very short ranges and off-boresight shots.
+Some missiles fly ballistically after launch before guidance activates (fins locked). Read from `guidance.controlDelay_s` or `guidance.autopilot.delay_s` (DCS ModelData[38]). Capped at **2.0 s** to prevent unrealistic ballistic arcs.
+
+During `time < controlDelay`, `ax = 0; ay = 0; az = G` — setting `az = G` cancels gravity in the integrator `(az - G) = 0`, so the missile holds its launch vector rather than diving. This models real aerodynamic stability during the fin-lock phase.
+
+Lofting air-launched missiles also receive a small initial `vz = shooterSpeed × sin(loftAngle/2)` to pre-pitch them into the loft trajectory, preventing the loft logic from fighting an initially diving missile.
 
 ### 6. Elevation Guidance (3D Homing)
 
