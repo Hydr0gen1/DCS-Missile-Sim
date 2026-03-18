@@ -14,6 +14,7 @@ export interface AircraftState {
   y: number;          // m
   vx: number;         // m/s
   vy: number;         // m/s
+  vzMs: number;       // m/s (positive = climbing) — implied by maneuver
   altFt: number;
   speedMs: number;
   headingDeg: number;
@@ -43,6 +44,7 @@ export function createAircraftState(
     y,
     vx: speedMs * Math.sin(rad),
     vy: speedMs * Math.cos(rad),
+    vzMs: 0,
     altFt,
     speedMs,
     headingDeg,
@@ -70,6 +72,7 @@ export function stepAircraft(
   threatDetected: boolean = true, // target has detected the threat via RWR/MAWS
 ): AircraftState {
   let { x, y, vx, vy, altFt, speedMs, headingDeg, maneuver, waypointIdx, waypoints } = state;
+  let vzMs = 0; // vertical velocity (m/s); set per-maneuver below
 
   // Current heading in rad
   let headingRad = (headingDeg * Math.PI) / 180;
@@ -99,11 +102,13 @@ export function stepAircraft(
         const notchDelta = notchTurnRate * dt;
         const notchDiff = normalizeAngle(notchRad - headingRad);
         headingRad += Math.sign(notchDiff) * Math.min(Math.abs(notchDiff), notchDelta);
+        vzMs = -30.48; // 100 ft/s descent
         altFt = Math.max(MIN_ALT_FT, altFt - 100 * dt); // 100 ft/s ≈ 6,000 fpm
         break;
       }
       case 'bunt': {
         // Bunt: push-over dive + accelerate; heading maintained
+        vzMs = -76.2; // 250 ft/s descent
         altFt = Math.max(MIN_ALT_FT, altFt - 250 * dt); // 250 ft/s ≈ 15,000 fpm
         speedMs = Math.min(speedMs * 1.001, 450);
         break;
@@ -142,6 +147,7 @@ export function stepAircraft(
     y: y + vy * dt,
     vx,
     vy,
+    vzMs,
     altFt,
     speedMs,
     headingDeg,

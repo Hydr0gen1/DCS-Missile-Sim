@@ -281,6 +281,55 @@ Minimum altitude floor: 500 ft AGL (increased from 200 ft to prevent unrealistic
 
 ---
 
+## 3D Mode Status
+
+### What is real (actual 3D physics)
+
+- **Missile position**: full 3D — `MissileState` tracks `{x, y, vx, vy, vz, altFt}`. `vz` integrates every tick with gravity, thrust, and drag contributions.
+- **Gravity**: applied to `vz` as `−G * DT` every step.
+- **Drag**: computed on full 3D speed `sqrt(vx²+vy²+vz²)`; the drag force vector is decomposed along all three velocity components.
+- **CPA hit detection**: uses all three coordinates `(x, y, altFt*FT_TO_M)` for both missile and target.
+- **3D view** (`TacticalDisplay3D.tsx`): reads actual `altFt` from every `SimFrame` and renders with `worldTo3D(x, y, altFt)` → correct `[east, altitude, −north]` in Three.js space.
+- **Aircraft altitude maneuvers**: notch descends at 100 ft/s (`vzMs = −30.5 m/s`), bunt at 250 ft/s (`vzMs = −76.2 m/s`). These are passed as `tvz` to the guidance law.
+
+### What was cosmetic (upgraded as of this session)
+
+- **Proportional navigation** was 2D: `proportionalNav()` only accepted `(x, y, vx, vy)` for missile and target; LOS rate was a scalar 2D cross product; the `az` guidance component was zero. **Upgraded** to true 3D PN (see below).
+- **Elevation steering** was decoupled: a separate `elevCmd = atan2(altErr, horizDist)` pitched the thrust vector independently of the PN law, meaning the PN and altitude guidance could conflict. **Replaced** with a unified 3D PN that includes the vertical plane in its LOS-rate computation.
+- **Thrust direction** was always decomposed via `elevCmd` (sometimes pointing the motor away from the velocity vector). **Changed** to thrust acting along the current velocity direction, with 3D PN providing all lateral + vertical guidance corrections.
+
+### 3D Physics Upgrade (implemented)
+
+**True 3D proportional navigation** (`guidance.ts`):
+```
+R     = (tx−mx, ty−my, tz−mz)          3D relative position
+V_rel = (tvx−mvx, tvy−mvy, tvz−mvz)    3D relative velocity
+Vc    = −(R̂ · V_rel)                   closing velocity
+Ω     = (R × V_rel) / |R|²             LOS angular velocity vector
+a_cmd = N · Vc · (V̂_missile × Ω)       PN acceleration ⊥ to velocity
+```
+All three components `(ax, ay, az)` are produced by `proportionalNav()` and clamped as a 3D vector to `gLimit × G`.
+
+**Loft / SAM steep launch** — handled via virtual target altitude instead of thrust tilting:
+- Loft phase: `tz_guide = targetAlt + sin(loftAngle) * horizDist` → PN naturally pitches up.
+- SAM steep phase (first 20% of burn, climbing): `tz_guide = missileAlt + 6000 m` → PN commands maximum climb.
+- Terminal phase: `tz_guide = actualTargetAlt`.
+
+**Thrust along velocity**: motor thrust acts along `V̂_missile` (the instantaneous velocity unit vector), not a manually pitched elevCmd. No energy is "wasted" pitching the motor away from the flight path.
+
+### Side Profile View
+
+`TacticalDisplay.tsx` offers two views toggled by pressing **P** (or clicking the [PLAN]/[PROFILE] button):
+- **Plan view** (default): top-down, X = east, Y = north — the classic BVR picture.
+- **Profile view**: range-from-shooter (X) vs altitude (Y) — shows loft trajectory, altitude differentials, and SAM climb profiles.
+
+### Remaining gaps
+
+- **Aircraft `vz` for non-altitude-changing maneuvers**: break/crank set `vzMs = 0`. A full energy model (System 3 from the roadmap) would compute vz from pitch + turn load.
+- **Target `vz` from altitude history**: `vzMs` is set from maneuver type, not integrated from pitch attitude. Good enough for BVR; imprecise during rapid pitch changes.
+
+---
+
 ## Known Gaps & Future Work
 
 1. **18 missiles without ModelData**: Older SAMs (SA-2, SA-3, SA-6, Roland, etc.) use a custom Lua format without the standard ModelData array. Currently skipped.

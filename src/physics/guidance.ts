@@ -1,7 +1,15 @@
 /**
- * Proportional Navigation guidance + loft logic.
- * a_cmd = N * Vc * LOS_dot
- * where Vc = closing velocity, LOS_dot = line-of-sight rate (rad/s)
+ * Proportional Navigation guidance — true 3D formulation.
+ *
+ * a_cmd = N · Vc · (V̂_missile × Ω)
+ *
+ * where:
+ *   Vc  = closing velocity  = −(R̂ · V_rel)
+ *   Ω   = LOS angular velocity = (R × V_rel) / |R|²
+ *   V̂   = missile velocity unit vector
+ *
+ * The cross product V̂ × Ω yields an acceleration vector perpendicular
+ * to the missile velocity that zeroes out the LOS rotation rate.
  */
 import type { PNEntry } from '../data/types';
 
@@ -14,7 +22,6 @@ export function getPNGain(rangeM: number, schedule: PNEntry[] | null | undefined
   if (!schedule || schedule.length === 0) return defaultN;
   if (schedule.length === 1) return schedule[0].N;
 
-  // Handle schedule starting from range_m = 0 (single-point constant)
   const sorted = [...schedule].sort((a, b) => a.range_m - b.range_m);
 
   if (rangeM <= sorted[0].range_m) return sorted[0].N;
@@ -31,103 +38,93 @@ export function getPNGain(rangeM: number, schedule: PNEntry[] | null | undefined
 
 export interface GuidanceInput {
   /** Missile position (m) */
-  mx: number;
-  my: number;
+  mx: number; my: number; mz: number;
   /** Missile velocity (m/s) */
-  mvx: number;
-  mvy: number;
-  /** Target position (m) */
-  tx: number;
-  ty: number;
+  mvx: number; mvy: number; mvz: number;
+  /** Target (or virtual loft point) position (m) */
+  tx: number; ty: number; tz: number;
   /** Target velocity (m/s) */
-  tvx: number;
-  tvy: number;
-  /** ProNav constant N (from missile data) */
+  tvx: number; tvy: number; tvz: number;
+  /** ProNav constant N */
   navConst: number;
 }
 
 export interface GuidanceOutput {
-  /** Lateral acceleration command (m/s²) in world X */
+  /** 3D acceleration command (m/s²) — perpendicular to missile velocity */
   ax: number;
-  /** Lateral acceleration command (m/s²) in world Y */
   ay: number;
-  /** Line-of-sight angle (rad) */
+  az: number;
+  /** Horizontal LOS angle (rad) */
   losAngle: number;
-  /** Range to target (m) */
+  /** 3D range to guidance target (m) */
   range: number;
-  /** Closing velocity (m/s) */
+  /** Closing velocity (m/s, positive = closing) */
   closingVelocity: number;
 }
 
 export function proportionalNav(input: GuidanceInput): GuidanceOutput {
-  const { mx, my, mvx, mvy, tx, ty, tvx, tvy, navConst } = input;
+  const { mx, my, mz, mvx, mvy, mvz, tx, ty, tz, tvx, tvy, tvz, navConst } = input;
 
   const dx = tx - mx;
   const dy = ty - my;
-  const range = Math.sqrt(dx * dx + dy * dy);
-
-  if (range < 1) {
-    return { ax: 0, ay: 0, losAngle: 0, range: 0, closingVelocity: 0 };
-  }
+  const dz = tz - mz;
+  const range = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
   const losAngle = Math.atan2(dx, dy);
 
-  // Relative velocity
+  if (range < 1) {
+    return { ax: 0, ay: 0, az: 0, losAngle, range: 0, closingVelocity: 0 };
+  }
+
+  // LOS unit vector
+  const losX = dx / range;
+  const losY = dy / range;
+  const losZ = dz / range;
+
+  // Relative velocity (target − missile)
   const rvx = tvx - mvx;
   const rvy = tvy - mvy;
+  const rvz = tvz - mvz;
 
-  // Closing velocity (positive = closing)
-  const losUnitX = dx / range;
-  const losUnitY = dy / range;
-  const closingVelocity = -(rvx * losUnitX + rvy * losUnitY);
+  // Closing velocity: positive = closing
+  const closingVelocity = -(rvx * losX + rvy * losY + rvz * losZ);
 
-  // LOS rate (rad/s): cross product of LOS unit and relative velocity / range
-  const losRate = (losUnitX * rvy - losUnitY * rvx) / range;
+  // LOS angular velocity: Ω = (R × V_rel) / |R|²
+  const r2 = range * range;
+  const ox = (dy * rvz - dz * rvy) / r2;
+  const oy = (dz * rvx - dx * rvz) / r2;
+  const oz = (dx * rvy - dy * rvx) / r2;
 
-  // Commanded lateral acceleration magnitude
-  const aCmdMag = navConst * closingVelocity * losRate;
+  // Missile velocity unit vector
+  const speed3D = Math.sqrt(mvx * mvx + mvy * mvy + mvz * mvz);
+  if (speed3D < 1) {
+    return { ax: 0, ay: 0, az: 0, losAngle, range, closingVelocity };
+  }
+  const vhx = mvx / speed3D;
+  const vhy = mvy / speed3D;
+  const vhz = mvz / speed3D;
 
-  // Perpendicular to LOS (rotate LOS unit 90°)
-  const perpX = -losUnitY;
-  const perpY = losUnitX;
+  // a_cmd = N · Vc · (V̂ × Ω)
+  const scale = navConst * closingVelocity;
+  const ax = scale * (vhy * oz - vhz * oy);
+  const ay = scale * (vhz * ox - vhx * oz);
+  const az = scale * (vhx * oy - vhy * ox);
 
-  return {
-    ax: aCmdMag * perpX,
-    ay: aCmdMag * perpY,
-    losAngle,
-    range,
-    closingVelocity,
-  };
+  return { ax, ay, az, losAngle, range, closingVelocity };
 }
 
-/** Clamp acceleration to missile G limit */
+/** Clamp 3D acceleration command to missile G limit */
 export function clampAcceleration(
   ax: number,
   ay: number,
+  az: number,
   maxG: number,
-  speedMs: number,
-): { ax: number; ay: number; limited: boolean } {
+  _speedMs: number,
+): { ax: number; ay: number; az: number; limited: boolean } {
   const G = 9.80665;
   const maxAcc = maxG * G;
-  const mag = Math.sqrt(ax * ax + ay * ay);
-  if (mag <= maxAcc || mag === 0) return { ax, ay, limited: false };
+  const mag = Math.sqrt(ax * ax + ay * ay + az * az);
+  if (mag <= maxAcc || mag === 0) return { ax, ay, az, limited: false };
   const scale = maxAcc / mag;
-  return { ax: ax * scale, ay: ay * scale, limited: true };
-}
-
-/** Loft: returns a vertical-plane pitch-up acceleration (adds to altitude rate) */
-export function loftAcceleration(
-  loftAngleDeg: number,
-  speedMs: number,
-  rangeM: number,
-  maxRangeM: number,
-  timeFlight: number,
-  burnTime: number,
-): number {
-  // Only loft during motor burn and if range > 60% of max
-  const shouldLoft = rangeM > 0.5 * maxRangeM && timeFlight < burnTime;
-  if (!shouldLoft || loftAngleDeg === null) return 0;
-  // Return vertical velocity component (ft/s)
-  const rad = (loftAngleDeg * Math.PI) / 180;
-  return speedMs * Math.sin(rad); // m/s vertical
+  return { ax: ax * scale, ay: ay * scale, az: az * scale, limited: true };
 }

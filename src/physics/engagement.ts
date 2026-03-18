@@ -398,34 +398,10 @@ export function runSimulation(cfg: ScenarioConfig): {
     const guidanceTargetX = seduced ? lastKnownTargetX : newTarget.x;
     const guidanceTargetY = seduced ? lastKnownTargetY : newTarget.y;
 
-    // Proportional nav — use range-dependent PN gain when available
-    const currentRange2D = Math.hypot(guidanceTargetX - missileState.x, guidanceTargetY - missileState.y);
-    const currentNavN = getPNGain(currentRange2D, pnSchedule, navN);
-    const guidOut = proportionalNav({
-      mx: missileState.x, my: missileState.y,
-      mvx: missileState.vx, mvy: missileState.vy,
-      tx: guidanceTargetX, ty: guidanceTargetY,
-      tvx: seduced ? 0 : newTarget.vx,
-      tvy: seduced ? 0 : newTarget.vy,
-      navConst: currentNavN,
-    });
-
-    const { range, closingVelocity } = seduced
-      ? { range: Math.sqrt(dxSk * dxSk + dySk * dySk), closingVelocity: 0 }
-      : guidOut;
-
-    let { ax, ay, limited } = clampAcceleration(guidOut.ax, guidOut.ay, gLimit, missileState.speedMs);
-    if (limited && !seduced) {
-      missReason = 'insufficient maneuverability';
-    }
-    // Track peak lateral G-load from guidance commands
-    const gLoad = Math.sqrt(ax * ax + ay * ay) / G;
-    if (gLoad > peakGLoad) peakGLoad = gLoad;
-
     // ── Thrust and mass: multi-phase if available, else linear burnout model ─
+    const burning = time < burnTime;
     let currentMass: number;
     let thrustForce: number;
-    const burning = time < burnTime;
     if (useMultiPhase) {
       const [thr, mss] = getThrustAndMass(time, propPhases, mass);
       thrustForce = thr;
@@ -435,77 +411,94 @@ export function runSimulation(cfg: ScenarioConfig): {
       thrustForce = burning ? thrust : 0;
     }
 
-    // ── Elevation guidance command ────────────────────────────────────────────
-    let elevCmd = 0; // rad
-    const altErrM = (seduced ? 0 : (newTarget.altFt - missileState.altFt)) * FT_TO_M;
-    const horizDistE = Math.hypot(
-      guidanceTargetX - missileState.x,
-      guidanceTargetY - missileState.y,
-    );
+    // ── Virtual target altitude: loft / SAM steep launch / terminal ──────────
+    const mzM = missileState.altFt * FT_TO_M;
+    const tzActual = newTarget.altFt * FT_TO_M;
+    const altErrLoft = tzActual - mzM;
+    const horizDistE = Math.hypot(guidanceTargetX - missileState.x, guidanceTargetY - missileState.y);
+    let tzGuide: number;
     if (isGroundLaunched) {
-      // Initial steep launch phase (first 20% of burn): minimum 60° climb to gain altitude
-      if (burning && time < burnTime * 0.2 && altErrM > 0) {
-        elevCmd = Math.PI / 3; // 60° initial climb
+      // SAM steep launch: guide toward a point 6 km above current altitude for the first 20% of burn
+      if (burning && time < burnTime * 0.2 && altErrLoft > 0) {
+        tzGuide = mzM + 6000;
       } else {
-        elevCmd = Math.atan2(altErrM, Math.max(horizDistE, 100));
-        // Clamp: max 75° climb, 45° dive
-        elevCmd = Math.max(-Math.PI / 4, Math.min((Math.PI * 5) / 12, elevCmd));
+        tzGuide = seduced ? mzM : tzActual;
       }
     } else {
-      // Air-launched: loft during boost at long range, else always steer to target altitude
+      // Air-launched: loft during boost at long range, else guide to actual target altitude
       if (burning && loftAngle > 0 && horizDistE > maxRangeM * 0.25) {
-        // Loft phase: pitch up during boost for long-range energy management
-        elevCmd = (loftAngle * Math.PI) / 180;
+        tzGuide = tzActual + Math.sin((loftAngle * Math.PI) / 180) * horizDistE;
       } else {
-        // Direct / terminal: actively guide nose toward target altitude
-        // This prevents the missile from flying above or below the target
-        elevCmd = Math.atan2(altErrM, Math.max(horizDistE, 200));
-        elevCmd = Math.max(-Math.PI / 2, Math.min(Math.PI / 3, elevCmd));
+        tzGuide = seduced ? mzM : tzActual;
       }
     }
 
+    // ── Proportional nav — 3D; PN gain on actual 3D range to real target ─────
+    const range3DActual = Math.sqrt(
+      (newTarget.x - missileState.x) ** 2 +
+      (newTarget.y - missileState.y) ** 2 +
+      (tzActual - mzM) ** 2,
+    );
+    const currentNavN = getPNGain(range3DActual, pnSchedule, navN);
+    const guidOut = proportionalNav({
+      mx: missileState.x, my: missileState.y, mz: mzM,
+      mvx: missileState.vx, mvy: missileState.vy, mvz: missileState.vz,
+      tx: guidanceTargetX, ty: guidanceTargetY, tz: tzGuide,
+      tvx: seduced ? 0 : newTarget.vx,
+      tvy: seduced ? 0 : newTarget.vy,
+      tvz: seduced ? 0 : (newTarget.vzMs ?? 0),
+      navConst: currentNavN,
+    });
+
+    const { range, closingVelocity } = seduced
+      ? { range: Math.sqrt(dxSk * dxSk + dySk * dySk), closingVelocity: 0 }
+      : guidOut;
+
+    let { ax, ay, az, limited } = clampAcceleration(guidOut.ax, guidOut.ay, guidOut.az, gLimit, missileState.speedMs);
+    if (limited && !seduced) {
+      missReason = 'insufficient maneuverability';
+    }
+    // Track peak lateral G-load from guidance commands
+    const gLoad = Math.sqrt(ax * ax + ay * ay + az * az) / G;
+    if (gLoad > peakGLoad) peakGLoad = gLoad;
+
     // ── 3D speed and drag ─────────────────────────────────────────────────────
-    // Horizontal speed (what guidance operates on)
-    const speed = missileState.speedMs;
-    // Total 3D speed (what aerodynamics operate on)
-    const speed3D = Math.sqrt(speed * speed + missileState.vz * missileState.vz);
+    const speed3D = Math.sqrt(
+      missileState.vx * missileState.vx +
+      missileState.vy * missileState.vy +
+      missileState.vz * missileState.vz,
+    );
     const mach3D = speed3D / speedOfSound(missileState.altFt);
-    // Use DCS Cx model when available (more accurate transonic/supersonic drag)
     const effectiveCd = cxModel
       ? getCxDCS(mach3D, cxModel)
       : cd * machDragMultiplierFallback(mach3D);
-    // Single drag force acts on total velocity vector
     const fdrag3D = dragForce(speed3D, missileState.altFt, effectiveCd, area);
 
-    // ── Horizontal thrust direction ───────────────────────────────────────────
-    let vHatX: number, vHatY: number;
-    if (speed < 1.0) {
-      const launchRad = (initialHeadingDeg * Math.PI) / 180;
-      vHatX = Math.sin(launchRad);
-      vHatY = Math.cos(launchRad);
-    } else {
-      vHatX = missileState.vx / speed;
-      vHatY = missileState.vy / speed;
-    }
-
-    // ── Thrust decomposition (Newton's 3rd correctly) ─────────────────────────
-    // Thrust = F along body axis. We decompose into horizontal & vertical.
-    // cos(elev) goes to horizontal propulsion; sin(elev) goes to climb.
+    // ── Thrust acts along the current velocity vector (body = velocity) ───────
     const invMass = 1 / currentMass;
-    const cosElev = Math.cos(elevCmd);
-    const sinElev = Math.sin(elevCmd);
-    const thrustAccX = thrustForce * invMass * cosElev * vHatX;
-    const thrustAccY = thrustForce * invMass * cosElev * vHatY;
-    const thrustAccZ = thrustForce * invMass * sinElev;
+    const safeDenom = Math.max(speed3D, 0.001);
+    let vhx3D: number, vhy3D: number, vhz3D: number;
+    if (speed3D < 1.0) {
+      const launchRad = (initialHeadingDeg * Math.PI) / 180;
+      vhx3D = Math.sin(launchRad);
+      vhy3D = Math.cos(launchRad);
+      vhz3D = 0;
+    } else {
+      vhx3D = missileState.vx / safeDenom;
+      vhy3D = missileState.vy / safeDenom;
+      vhz3D = missileState.vz / safeDenom;
+    }
+    const thrustAccX = thrustForce * invMass * vhx3D;
+    const thrustAccY = thrustForce * invMass * vhy3D;
+    const thrustAccZ = thrustForce * invMass * vhz3D;
 
     // ── Drag acts opposite to full 3D velocity ────────────────────────────────
-    const safeDenom = Math.max(speed3D, 0.001);
     const dragAccX = -(fdrag3D * invMass) * (missileState.vx / safeDenom);
     const dragAccY = -(fdrag3D * invMass) * (missileState.vy / safeDenom);
     const dragAccZ = -(fdrag3D * invMass) * (missileState.vz / safeDenom);
 
-    // ── Integrate ─────────────────────────────────────────────────────────────
-    const newVz = missileState.vz + (thrustAccZ + dragAccZ - G) * DT;
+    // ── Integrate (3D PN az replaces the old decoupled elevCmd) ──────────────
+    const newVz = missileState.vz + (az + thrustAccZ + dragAccZ - G) * DT;
     const newVx = missileState.vx + (ax + thrustAccX + dragAccX) * DT;
     const newVy = missileState.vy + (ay + thrustAccY + dragAccY) * DT;
     const newSpeed = Math.sqrt(newVx * newVx + newVy * newVy);
