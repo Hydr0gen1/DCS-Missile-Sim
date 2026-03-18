@@ -47,6 +47,13 @@ export default function ResultsPanel() {
           {frame.target.currentG > 1.05 && (
             <Row label="TGT G" value={`${frame.target.currentG.toFixed(1)}G`} />
           )}
+          {frame.datalinkActive !== undefined && (
+            <Row label="DLINK" value={
+              frame.datalinkActive
+                ? <span style={{ color: T.success }}>UP</span>
+                : <span style={{ color: T.danger }}>LOST</span>
+            } />
+          )}
           <Row label="SEEKER" value={frame.missile.active ? <span style={{ color: T.success }}>ACTIVE</span> : 'SILENT'} />
           <Row label="MOTOR" value={frame.missile.motorBurning ? <span style={{ color: T.warning }}>BURNING</span> : 'COAST'} />
           {frame.cmEvent && <CMEventBadge event={frame.cmEvent} />}
@@ -163,6 +170,8 @@ function timelineColor(type: string): string {
   if (type === 'search_detected') return T.textDim;
   if (type === 'stt_lock') return T.warning;
   if (type === 'missile_active') return T.danger;
+  if (type === 'datalink_lost') return '#ff4444';
+  if (type === 'datalink_restored') return '#00cc44';
   return T.text;
 }
 

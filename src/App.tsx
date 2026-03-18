@@ -10,6 +10,7 @@ import PlaybackBar from './ui/PlaybackBar';
 import MissileEditor from './ui/MissileEditor';
 import EnvelopePlot from './ui/EnvelopePlot';
 import SimSummaryModal from './ui/SimSummaryModal';
+import ComparisonPanel from './ui/ComparisonPanel';
 
 export default function App() {
   const { appMode, setAppMode, setIsPlaying, resetSim, setPlaybackSpeed, setCurrentFrameIdx, simFrames, currentFrameIdx, isPlaying, simStatus, simResult } =
@@ -59,13 +60,13 @@ export default function App() {
       <div style={styles.topBar}>
         <div style={styles.appTitle}>DCS MISSILE SIM</div>
         <div style={styles.nav}>
-          {(['tactical', 'envelope', 'editor'] as const).map((mode) => (
+          {(['tactical', 'envelope', 'compare', 'editor'] as const).map((mode) => (
             <button
               key={mode}
               style={{ ...styles.navBtn, ...(appMode === mode ? styles.navBtnActive : {}) }}
               onClick={() => setAppMode(mode)}
             >
-              {mode === 'tactical' ? 'TACTICAL' : mode === 'envelope' ? 'ENVELOPE' : 'MISSILE EDITOR'}
+              {mode === 'tactical' ? 'TACTICAL' : mode === 'envelope' ? 'ENVELOPE' : mode === 'compare' ? 'COMPARE' : 'MISSILE EDITOR'}
             </button>
           ))}
         </div>
@@ -112,6 +113,9 @@ export default function App() {
               <EnvelopePlot />
             </div>
           </>
+        )}
+        {appMode === 'compare' && (
+          <ComparisonPanel />
         )}
         {appMode === 'editor' && (
           <div style={{ flex: 1 }}>
