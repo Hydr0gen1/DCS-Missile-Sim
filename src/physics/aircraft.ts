@@ -75,8 +75,8 @@ const FT_TO_M = 0.3048;
 const RHO_SL = 1.225; // kg/m³ sea-level density
 
 /** G load for each maneuver (used for energy drain) */
-function maneuverG(m: ManeuverType, missileActive: boolean): number {
-  if (!missileActive) return 1.0;
+function maneuverG(m: ManeuverType, shouldManeuver: boolean): number {
+  if (!shouldManeuver) return 1.0;
   switch (m) {
     case 'break':  return MAX_G;
     case 'notch':  return NOTCH_G;
@@ -92,7 +92,8 @@ export function stepAircraft(
   dt: number,
   missileX: number,
   missileY: number,
-  missileActive: boolean,
+  /** Whether the aircraft should begin executing its defensive maneuver now */
+  shouldManeuver: boolean,
   threatDetected: boolean = true,
   config?: AircraftData,
 ): AircraftState {
@@ -104,9 +105,9 @@ export function stepAircraft(
   const dxM = missileX - x;
   const dyM = missileY - y;
 
-  const currentG = maneuverG(maneuver, missileActive);
+  const currentG = maneuverG(maneuver, shouldManeuver);
 
-  if (missileActive && threatDetected && maneuver !== 'none' && maneuver !== 'custom') {
+  if (shouldManeuver && threatDetected && maneuver !== 'none' && maneuver !== 'custom') {
     const missileAngle = Math.atan2(dxM, dyM);
 
     switch (maneuver) {
