@@ -223,17 +223,18 @@ function SceneContent() {
   const sy = frame?.shooter.y ?? 0;
   const tx = frame?.target.x  ?? (rangeNm * NM_TO_M * Math.sin((aspectAngleDeg * Math.PI) / 180));
   const ty = frame?.target.y  ?? (rangeNm * NM_TO_M * Math.cos((aspectAngleDeg * Math.PI) / 180));
-  const mx = frame?.missile.x ?? sx;
-  const my = frame?.missile.y ?? sy;
+  const mx = frame?.missiles[0]?.x ?? frame?.missile.x ?? sx;
+  const my = frame?.missiles[0]?.y ?? frame?.missile.y ?? sy;
 
   const shooterPos = worldTo3D(sx, sy, shooterAlt);
   const targetPos  = worldTo3D(tx, ty, targetAlt);
   const missilePos = worldTo3D(mx, my, missileAlt);
 
-  // Missile trail with altitude-aware points
+  // Missile trail with altitude-aware points (lead missile)
   const trailPoints: [number, number, number][] = useMemo(() => {
-    if (!frame || frame.missile.trail.length < 2) return [];
-    return frame.missile.trail.map(({ x, y, alt }) => worldTo3D(x, y, alt));
+    const lead = frame?.missiles?.[0] ?? frame?.missile;
+    if (!lead || lead.trail.length < 2) return [];
+    return lead.trail.map(({ x, y, alt }) => worldTo3D(x, y, alt));
   }, [frame]);
 
   // Range rings on ground (centered on target start position)
@@ -304,20 +305,31 @@ function SceneContent() {
       {/* Target */}
       <AircraftEntity pos={targetPos} color="#ff4444" />
 
-      {/* Missile */}
-      {frame && (
-        <MissileEntity
-          pos={missilePos}
-          vx={frame.missile.vx}
-          vy={frame.missile.vy}
-          vz={frame.missile.vz}
-        />
-      )}
+      {/* Missiles (all salvo) */}
+      {frame && (frame.missiles ?? [frame.missile]).map((msl, mi) => {
+        if (mi > 0 && !msl.motorBurning && !msl.active && msl.speedMs < 1) return null;
+        const mPos = worldTo3D(msl.x, msl.y, msl.altFt);
+        return (
+          <MissileEntity key={mi} pos={mPos} vx={msl.vx} vy={msl.vy} vz={msl.vz} />
+        );
+      })}
 
       {/* Missile trail */}
       {trailPoints.length >= 2 && (
         <Line points={trailPoints} color="#ff8800" lineWidth={2.5} />
       )}
+
+      {/* Countermeasures (flares = yellow, chaff = cyan) */}
+      {frame?.countermeasures?.map((cm) => {
+        const cmPos = worldTo3D(cm.x, cm.y, cm.altFt);
+        const color = cm.type === 'flare' ? '#ffee44' : '#44ccff';
+        return (
+          <mesh key={cm.id} position={cmPos}>
+            <boxGeometry args={[80, 80, 80]} />
+            <meshBasicMaterial color={color} transparent opacity={cm.opacity * 0.9} />
+          </mesh>
+        );
+      })}
 
       {/* Free camera */}
       <FlyCamera initialPos={initialCamPos} lookAt={lookAtPt} />
@@ -340,11 +352,11 @@ function HUDOverlay() {
           <div style={hud.row}><span style={hud.dim}>T+ </span>{frame.time.toFixed(1)}<span style={hud.unit}>s</span></div>
           <div style={hud.row}><span style={hud.dim}>CLS </span>{(frame.closingVelocity * 1.94384).toFixed(0)}<span style={hud.unit}>kt</span></div>
           <div style={hud.row}><span style={hud.dim}>TTI </span>{frame.timeToImpact < 9999 ? `${frame.timeToImpact.toFixed(1)}s` : '---'}</div>
-          <div style={{ ...hud.row, color: energyColor(frame.missile.energy) }}>
-            <span style={hud.dim}>NRG </span>{(frame.missile.energy * 100).toFixed(0)}<span style={hud.unit}>%</span>
+          <div style={{ ...hud.row, color: energyColor((frame.missiles?.[0] ?? frame.missile).energy) }}>
+            <span style={hud.dim}>NRG </span>{((frame.missiles?.[0] ?? frame.missile).energy * 100).toFixed(0)}<span style={hud.unit}>%</span>
           </div>
           <div style={hud.sep} />
-          <div style={hud.row}><span style={hud.dim}>MSL </span>{Math.round(frame.missile.altFt).toLocaleString()}<span style={hud.unit}>ft</span></div>
+          <div style={hud.row}><span style={hud.dim}>MSL </span>{Math.round((frame.missiles?.[0] ?? frame.missile).altFt).toLocaleString()}<span style={hud.unit}>ft</span></div>
           <div style={{ ...hud.row, color: '#4488ff' }}><span style={hud.dim}>SHT </span>{Math.round(frame.shooter.altFt).toLocaleString()}<span style={hud.unit}>ft</span></div>
           <div style={{ ...hud.row, color: '#ff6644' }}><span style={hud.dim}>TGT </span>{Math.round(frame.target.altFt).toLocaleString()}<span style={hud.unit}>ft</span></div>
           <div style={hud.row}><span style={hud.dim}>RNG </span>{(frame.range * M_TO_NM).toFixed(1)}<span style={hud.unit}>nm</span></div>

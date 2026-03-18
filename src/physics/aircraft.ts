@@ -132,7 +132,6 @@ export function stepAircraft(
       case 'bunt': {
         vzMs = -76.2; // 250 ft/s descent
         altFt = Math.max(MIN_ALT_FT, altFt - 250 * dt);
-        speedMs = Math.min(speedMs * 1.001, 450);
         break;
       }
       case 'break': {
@@ -209,7 +208,7 @@ export function stepAircraft(
   };
 }
 
-function normalizeAngle(a: number): number {
+export function normalizeAngle(a: number): number {
   while (a > Math.PI) a -= 2 * Math.PI;
   while (a < -Math.PI) a += 2 * Math.PI;
   return a;

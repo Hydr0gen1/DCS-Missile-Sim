@@ -121,28 +121,31 @@ export default function TacticalDisplay() {
       return;
     }
 
-    // Missile trail in profile
-    if (frame.missile.trail.length > 1) {
-      const { shooter: sh } = frame;
-      const shBaseX = sh.x;
-      const shBaseY = sh.y;
-      ctx.beginPath();
-      let first = true;
-      for (const pt of frame.missile.trail) {
-        const rNm = Math.hypot(pt.x - shBaseX, pt.y - shBaseY) * M_TO_NM;
-        const [px, py] = toCanvas(rNm, pt.alt);
-        if (first) { ctx.moveTo(px, py); first = false; } else { ctx.lineTo(px, py); }
+    // Missile trails in profile (all salvo missiles)
+    const profileMissiles = frame.missiles ?? [frame.missile];
+    for (let mi = 0; mi < profileMissiles.length; mi++) {
+      const msl = profileMissiles[mi];
+      if (msl.trail.length > 1) {
+        const { shooter: sh } = frame;
+        ctx.beginPath();
+        let first = true;
+        for (const pt of msl.trail) {
+          const rNm = Math.hypot(pt.x - sh.x, pt.y - sh.y) * M_TO_NM;
+          const [px, py] = toCanvas(rNm, pt.alt);
+          if (first) { ctx.moveTo(px, py); first = false; } else { ctx.lineTo(px, py); }
+        }
+        ctx.strokeStyle = mi === 0 ? 'rgba(255,165,0,0.6)' : 'rgba(255,140,60,0.4)';
+        ctx.lineWidth = mi === 0 ? 1.5 : 1;
+        ctx.stroke();
       }
-      ctx.strokeStyle = 'rgba(255,165,0,0.6)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
     }
 
-    // Current missile dot
-    const mrNm = Math.hypot(frame.missile.x - frame.shooter.x, frame.missile.y - frame.shooter.y) * M_TO_NM;
-    const [mxP, myP] = toCanvas(mrNm, frame.missile.altFt);
+    // Current missile dot (lead)
+    const leadMsl = profileMissiles[0];
+    const mrNm = Math.hypot(leadMsl.x - frame.shooter.x, leadMsl.y - frame.shooter.y) * M_TO_NM;
+    const [mxP, myP] = toCanvas(mrNm, leadMsl.altFt);
     ctx.beginPath(); ctx.arc(mxP, myP, 4, 0, 2 * Math.PI);
-    ctx.fillStyle = energyToColor(frame.missile.energy); ctx.fill();
+    ctx.fillStyle = energyToColor(leadMsl.energy); ctx.fill();
 
     // Shooter icon
     const srNm = 0; // shooter at range 0
@@ -160,7 +163,7 @@ export default function TacticalDisplay() {
 
     // Missile altitude label
     ctx.fillStyle = '#ffaa00';
-    ctx.fillText(`MSL ${Math.round(frame.missile.altFt / 1000)}k ft`, mxP + 6, myP - 6);
+    ctx.fillText(`MSL ${Math.round(leadMsl.altFt / 1000)}k ft`, mxP + 6, myP - 6);
   }, [simFrames, currentFrameIdx, simStatus, rangeNm, storeShooterAlt, storeTargetAlt]);
 
   const draw = useCallback(() => {
@@ -265,29 +268,67 @@ export default function TacticalDisplay() {
       return;
     }
 
-    const { missile, shooter, target } = frame;
+    const { missiles, shooter, target } = frame;
+    const missile = missiles[0]; // lead missile for HUD and datalink
 
-    // Draw missile trail
-    if (missile.trail.length > 1) {
-      ctx.beginPath();
-      const [tx0, ty0] = worldToCanvas(missile.trail[0].x, missile.trail[0].y, cx, cy, scale);
-      ctx.moveTo(tx0, ty0);
-      for (let i = 1; i < missile.trail.length; i++) {
-        const [tx1, ty1] = worldToCanvas(missile.trail[i].x, missile.trail[i].y, cx, cy, scale);
-        ctx.lineTo(tx1, ty1);
+    // Draw trails for all salvo missiles
+    for (let mi = 0; mi < missiles.length; mi++) {
+      const msl = missiles[mi];
+      if (msl.trail.length > 1) {
+        ctx.beginPath();
+        const [tx0, ty0] = worldToCanvas(msl.trail[0].x, msl.trail[0].y, cx, cy, scale);
+        ctx.moveTo(tx0, ty0);
+        for (let i = 1; i < msl.trail.length; i++) {
+          const [tx1, ty1] = worldToCanvas(msl.trail[i].x, msl.trail[i].y, cx, cy, scale);
+          ctx.lineTo(tx1, ty1);
+        }
+        ctx.strokeStyle = mi === 0 ? 'rgba(255,165,0,0.5)' : 'rgba(255,140,60,0.35)';
+        ctx.lineWidth = mi === 0 ? 1.5 : 1;
+        ctx.stroke();
       }
-      ctx.strokeStyle = 'rgba(255,165,0,0.5)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
     }
 
-    // Missile dot
+    // Datalink line: shooter → lead missile (green = active, red dashed = lost)
     const [mx, my] = worldToCanvas(missile.x, missile.y, cx, cy, scale);
-    ctx.beginPath();
-    ctx.arc(mx, my, 4, 0, 2 * Math.PI);
-    const energyColor = energyToColor(missile.energy);
-    ctx.fillStyle = energyColor;
-    ctx.fill();
+    const [dlsx, dlsy] = worldToCanvas(shooter.x, shooter.y, cx, cy, scale);
+    if (shooterRole !== 'ground') {
+      ctx.beginPath();
+      ctx.moveTo(dlsx, dlsy);
+      ctx.lineTo(mx, my);
+      if (frame.datalinkActive === false) {
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = 'rgba(255,60,60,0.5)';
+      } else {
+        ctx.setLineDash([]);
+        ctx.strokeStyle = 'rgba(0,200,80,0.35)';
+      }
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // CM objects (flares = yellow squares, chaff = cyan squares)
+    if (frame.countermeasures) {
+      for (const cm of frame.countermeasures) {
+        const [cmx, cmy] = worldToCanvas(cm.x, cm.y, cx, cy, scale);
+        const sz = cm.type === 'flare' ? 4 : 3;
+        ctx.globalAlpha = cm.opacity * 0.85;
+        ctx.fillStyle = cm.type === 'flare' ? '#ffee44' : '#44ccff';
+        ctx.fillRect(cmx - sz / 2, cmy - sz / 2, sz, sz);
+      }
+      ctx.globalAlpha = 1.0;
+    }
+
+    // Missile dots (all salvo missiles)
+    for (let mi = 0; mi < missiles.length; mi++) {
+      const msl = missiles[mi];
+      if (mi > 0 && !msl.motorBurning && !msl.active && msl.speedMs < 1) continue; // pre-launch
+      const [mmx, mmy] = worldToCanvas(msl.x, msl.y, cx, cy, scale);
+      ctx.beginPath();
+      ctx.arc(mmx, mmy, mi === 0 ? 4 : 3, 0, 2 * Math.PI);
+      ctx.fillStyle = energyToColor(msl.energy);
+      ctx.fill();
+    }
 
     // Shooter
     const [sx, sy] = worldToCanvas(shooter.x, shooter.y, cx, cy, scale);

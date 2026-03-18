@@ -1,6 +1,7 @@
 import { useSimStore } from '../store/simStore';
 import type { ShooterRole } from '../store/simStore';
 import type { ManeuverType } from '../physics/aircraft';
+import type { ShooterManeuverType } from '../data/types';
 import { getMissingFields } from '../physics/missile';
 import { T } from './theme';
 
@@ -17,6 +18,7 @@ export default function SetupPanel() {
     targetAircraftId, targetAlt, targetSpeed, targetHeading,
     targetManeuver, targetChaffCount, targetFlareCount, targetReactOnDetect,
     rangeNm, aspectAngleDeg, selectedMissileId,
+    shooterManeuver, salvoCount, salvoInterval_s,
     setScenario,
   } = store;
 
@@ -89,6 +91,19 @@ export default function SetupPanel() {
             Speed: 0 kts — Heading: auto-aimed
           </div>
         )}
+
+        {label('Post-Launch Maneuver', 'Shooter maneuver after missile launch — affects datalink angle and F-pole')}
+        <select
+          style={styles.select}
+          value={shooterManeuver}
+          onChange={(e) => setScenario({ shooterManeuver: e.target.value as ShooterManeuverType })}
+        >
+          <option value="none">None — Straight & Level</option>
+          <option value="crank_left">Crank Left (70° offset, open range)</option>
+          <option value="crank_right">Crank Right (70° offset, open range)</option>
+          <option value="pump">Pump (crank 10s, then recommit)</option>
+          <option value="drag">Drag (go cold, max F-pole)</option>
+        </select>
       </div>
 
       <div style={styles.section}>
@@ -188,6 +203,20 @@ export default function SetupPanel() {
 
       <div style={styles.section}>
         <div style={styles.sectionTitle}>MISSILE</div>
+        {label(`Salvo: ${salvoCount} missile${salvoCount > 1 ? 's' : ''}`, 'Number of missiles launched in salvo (1-4)')}
+        <input type="range" min={1} max={4} step={1} value={salvoCount}
+          onChange={(e) => setScenario({ salvoCount: +e.target.value })}
+          style={styles.slider} />
+
+        {salvoCount > 1 && (
+          <>
+            {label(`Interval: ${salvoInterval_s.toFixed(1)} s`, 'Time between missile launches')}
+            <input type="range" min={0.5} max={10} step={0.5} value={salvoInterval_s}
+              onChange={(e) => setScenario({ salvoInterval_s: +e.target.value })}
+              style={styles.slider} />
+          </>
+        )}
+
         <select
           style={styles.select}
           value={selectedMissileId}

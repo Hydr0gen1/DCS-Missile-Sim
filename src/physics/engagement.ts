@@ -8,7 +8,8 @@ import type { MissileState } from './missile';
 import { proportionalNav, clampAcceleration, getPNGain } from './guidance';
 import { createAircraftState, stepAircraft } from './aircraft';
 import type { AircraftState, ManeuverType } from './aircraft';
-import type { MissileData, RWRState, RWRThreat, MAWSSector, AircraftData, DetectionEvent, WEZResult } from '../data/types';
+import { stepShooterManeuver, gimbalAngle } from './shooterManeuver';
+import type { MissileData, RWRState, RWRThreat, MAWSSector, AircraftData, DetectionEvent, WEZResult, ShooterManeuverType, CMObject } from '../data/types';
 import { computeDLZ } from './missile';
 import { DCS_CM_COEFFS } from '../data/dcsConstants';
 
@@ -75,6 +76,12 @@ export interface ScenarioConfig {
   shooterAircraftData?: AircraftData;
   /** Target aircraft data (enables energy model, RCS-based radar detection) */
   targetAircraftData?: AircraftData;
+  /** Shooter post-launch maneuver (default 'none') */
+  shooterManeuver?: ShooterManeuverType;
+  /** Number of missiles in the salvo (default 1) */
+  salvoCount?: number;
+  /** Time between missile launches in seconds (default 2) */
+  salvoInterval_s?: number;
   // Initial geometry
   rangeNm: number;
   aspectAngleDeg: number;   // 0=hot, 180=cold
@@ -116,6 +123,9 @@ export interface CMEvent {
 
 export interface SimFrame {
   time: number;
+  /** All missiles in the salvo (index 0 = lead missile) */
+  missiles: MissileState[];
+  /** @deprecated Use missiles[0] — kept for backward compat during transition */
   missile: MissileState;
   shooter: AircraftState;
   target: AircraftState;
@@ -126,6 +136,8 @@ export interface SimFrame {
   cmEvent?: CMEvent;       // countermeasure event at this frame (if any)
   rwr?: RWRState;          // RWR/MAWS state for target aircraft
   wez?: WEZResult;         // dynamic launch zone at this frame
+  datalinkActive?: boolean; // true when shooter radar still illuminates missile FOV
+  countermeasures?: CMObject[]; // CM objects (chaff/flares) in flight
 }
 
 export type SimStatus = 'idle' | 'running' | 'hit' | 'miss' | 'error';
@@ -315,6 +327,59 @@ export function runSimulation(cfg: ScenarioConfig): {
   let currentWez: WEZResult | undefined;
   let wezCounter = 0;
 
+  // Shooter maneuver + datalink state
+  const shooterManeuverType: ShooterManeuverType = cfg.shooterManeuver ?? 'none';
+  const radarGimbalDeg = cfg.shooterAircraftData?.radarGimbalDeg ?? cfg.shooterAircraftData?.radar?.gimbalLimit_deg ?? 70;
+  let datalinkActive = true;
+  let datalinkWasLost = false;
+  // IOG: ARH always has inertial mid-course; SARH depends on hasIOG field
+  const hasIOG = m.hasIOG ?? (m.type === 'ARH');
+
+  // CM objects in flight (for visual rendering)
+  let activeCMObjects: CMObject[] = [];
+  let cmObjectIdCounter = 0;
+
+  // ── Salvo secondary missiles (slots 1..N-1) ────────────────────────────────
+  interface SalvoSlot {
+    launchTime: number;
+    state: MissileState;
+    tFlight: number;          // time since this missile's launch
+    seduced: boolean;
+    seductionEndTime: number;
+    lastKnownX: number;
+    lastKnownY: number;
+    activeRecorded: boolean;
+    done: boolean;
+  }
+
+  const salvoCount = Math.max(1, Math.min(4, cfg.salvoCount ?? 1));
+  const salvoInterval = cfg.salvoInterval_s ?? 2.0;
+  const secondarySlots: SalvoSlot[] = [];
+  for (let i = 1; i < salvoCount; i++) {
+    // Create a pre-launch state (will be replaced when slot launches)
+    const preLaunchState = createMissileState(
+      shooterX, shooterY, initialHeadingDeg, shooterSpeedMs, cfg.shooterAlt,
+    );
+    secondarySlots.push({
+      launchTime: i * salvoInterval,
+      state: { ...preLaunchState, motorBurning: false, active: false },
+      tFlight: 0,
+      seduced: false,
+      seductionEndTime: 0,
+      lastKnownX: targetX,
+      lastKnownY: targetY,
+      activeRecorded: false,
+      done: false,
+    });
+  }
+
+  /** Snapshot all salvo missiles for a frame (pre-launch missiles park at origin) */
+  function snapshotMissiles(lead: MissileState): MissileState[] {
+    return [lead, ...secondarySlots.map((s) =>
+      time >= s.launchTime ? s.state : { ...lead, x: shooterState.x, y: shooterState.y, motorBurning: false, active: false, trail: [], energy: 0, speedMs: 0, vx: 0, vy: 0, vz: 0 }
+    )];
+  }
+
   while (time < maxTime) {
     // --- Seeker activation (before stepAircraft so detection can gate maneuver) ---
     const dxSk = targetState.x - missileState.x;
@@ -440,6 +505,15 @@ export function runSimulation(cfg: ScenarioConfig): {
         flareSalvosUsed++;
         lastCmDispenseTime = time;
 
+        // Spawn flare object (falls at 15 m/s, 3s lifetime)
+        activeCMObjects.push({
+          id: cmObjectIdCounter++,
+          type: 'flare',
+          x: newTarget.x, y: newTarget.y, altFt: newTarget.altFt,
+          vx: newTarget.vx * 0.3, vy: newTarget.vy * 0.3, vzMs: -15,
+          lifetime: 3.0, maxLifetime: 3.0, opacity: 1.0,
+        });
+
         if (roll < pSeduced) {
           seduced = true;
           seductionEndTime = time + 2.0 + nextRng() * 2.0;
@@ -461,6 +535,15 @@ export function runSimulation(cfg: ScenarioConfig): {
         chaffSalvosUsed++;
         lastCmDispenseTime = time;
 
+        // Spawn chaff cloud (drifts at 2 m/s, 8s lifetime)
+        activeCMObjects.push({
+          id: cmObjectIdCounter++,
+          type: 'chaff',
+          x: newTarget.x, y: newTarget.y, altFt: newTarget.altFt,
+          vx: newTarget.vx * 0.05, vy: newTarget.vy * 0.05, vzMs: -2,
+          lifetime: 8.0, maxLifetime: 8.0, opacity: 1.0,
+        });
+
         if (roll < pSeduced) {
           seduced = true;
           seductionEndTime = time + 1.5 + nextRng() * 2.5;
@@ -471,6 +554,18 @@ export function runSimulation(cfg: ScenarioConfig): {
         }
       }
     }
+
+    // --- Step CM objects (physics + decay) ---
+    activeCMObjects = activeCMObjects
+      .map((cm) => ({
+        ...cm,
+        x: cm.x + cm.vx * DT,
+        y: cm.y + cm.vy * DT,
+        altFt: Math.max(0, cm.altFt + (cm.vzMs * DT) / FT_TO_M),
+        lifetime: cm.lifetime - DT,
+        opacity: cm.lifetime / cm.maxLifetime,
+      }))
+      .filter((cm) => cm.lifetime > 0 && cm.altFt > 0);
 
     // --- Re-acquisition after seduction ---
     if (seduced && time >= seductionEndTime && rangeSk <= seekerRangeM * 1.5) {
@@ -619,7 +714,7 @@ export function runSimulation(cfg: ScenarioConfig): {
       fPoleNm = Math.sqrt(fdx * fdx + fdy * fdy) * M_TO_NM;
       if (!activeRecorded) aPoleNm = fPoleNm;
       const rwrEnergy = computeRWR(newTarget, shooterState, missileState, m, seekerRangeM, hasMaws);
-      frames.push(buildFrame(time, missileState, shooterState, newTarget, range, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrEnergy, currentWez));
+      frames.push(buildFrame(time, snapshotMissiles(missileState), shooterState, newTarget, range, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrEnergy, currentWez, datalinkActive, activeCMObjects));
       break;
     }
 
@@ -638,15 +733,14 @@ export function runSimulation(cfg: ScenarioConfig): {
       fPoleNm = Math.sqrt(fdxH * fdxH + fdyH * fdyH) * M_TO_NM;
       if (!activeRecorded) aPoleNm = fPoleNm;
       const rwrHit = computeRWR(newTarget, shooterState, missileState, m, seekerRangeM, hasMaws);
-      const rHit = Math.hypot(newTarget.x - newMx, newTarget.y - newMy);
-      frames.push(buildFrame(time + DT, missileState, shooterState, newTarget, isGroundLaunched ? cpa : rHit, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrHit, currentWez));
+      frames.push(buildFrame(time + DT, snapshotMissiles(missileState), shooterState, newTarget, cpa, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrHit, currentWez, datalinkActive, activeCMObjects));
       break;
     }
 
     // ── Ground-strike check (missile hit terrain after boost) ─────────────────
     if (newAlt <= 0 && newVz < 0 && time > burnTime + 1.0) {
       missReason = 'ground strike';
-      frames.push(buildFrame(time + DT, missileState, shooterState, newTarget, range, closingVelocity, maxSpeedMs, cmEventThisFrame, undefined, currentWez));
+      frames.push(buildFrame(time + DT, snapshotMissiles(missileState), shooterState, newTarget, range, closingVelocity, maxSpeedMs, cmEventThisFrame, undefined, currentWez, datalinkActive, activeCMObjects));
       break;
     }
 
@@ -675,21 +769,56 @@ export function runSimulation(cfg: ScenarioConfig): {
       altAtPeakSpeed = newAlt;
     }
 
-    // --- Step shooter (with energy model when aircraft data available) ---
-    shooterState = stepAircraft(
-      shooterState, DT,
-      missileState.x, missileState.y,
-      false, false,
-      cfg.shooterAircraftData,
+    // --- Step shooter (post-launch maneuver) ---
+    if (isGroundLaunched) {
+      // Ground launchers are stationary — no step needed
+    } else {
+      shooterState = stepShooterManeuver(
+        shooterState,
+        newTarget.x, newTarget.y,
+        DT,
+        shooterManeuverType,
+        time,
+        cfg.shooterAircraftData,
+      );
+    }
+
+    // --- Datalink gate: is target within shooter radar gimbal? ---
+    const gimbalRad = gimbalAngle(
+      shooterState.headingDeg,
+      shooterState.x, shooterState.y,
+      newTarget.x, newTarget.y,
     );
+    const gimbalDeg = gimbalRad * 180 / Math.PI;
+    const newDatalinkActive = gimbalDeg <= radarGimbalDeg;
+
+    if (!newDatalinkActive && datalinkActive && !datalinkWasLost) {
+      datalinkWasLost = true;
+      detectionTimeline.push({ time, type: 'datalink_lost', description: `Datalink lost (gimbal ${gimbalDeg.toFixed(0)}° > ${radarGimbalDeg}°)` });
+    } else if (newDatalinkActive && !datalinkActive) {
+      datalinkWasLost = false;
+      detectionTimeline.push({ time, type: 'datalink_restored', description: 'Datalink restored' });
+    }
+    datalinkActive = newDatalinkActive;
+
+    // Apply datalink loss to guidance for next tick:
+    // - ARH with IOG: continues on last known target position (already handled by lastKnownTargetX/Y)
+    // - SARH pure (no IOG): ax=ay=az=0 next tick (set via seduced flag as approximation)
+    // - SARH with IOG: dead-reckon mid-course (same as ARH with IOG)
+    if (!datalinkActive && m.type === 'SARH' && !hasIOG) {
+      // Pure SARH without IOG goes ballistic when illuminator is lost
+      seduced = true;
+      seductionEndTime = time + 9999; // stays ballistic until datalink restored
+    } else if (newDatalinkActive && m.type === 'SARH' && !hasIOG && seduced && datalinkWasLost) {
+      // Datalink restored — resume guidance
+      seduced = false;
+    }
 
     // --- Per-frame WEZ update (every 10 frames) ---
     if (wezCounter % 10 === 0) {
-      const wezDx = newTarget.x - shooterState.x;
-      const wezDy = newTarget.y - shooterState.y;
-      const wezBearingRad = Math.atan2(wezDx, wezDy);
-      const wezShooterHeadRad = (shooterState.headingDeg * Math.PI) / 180;
-      const wezAspect = Math.abs(normalizeAngleRad(wezBearingRad - wezShooterHeadRad)) * 180 / Math.PI;
+      const bearingTargetToShooter = Math.atan2(shooterState.x - newTarget.x, shooterState.y - newTarget.y);
+      const wezTargetHeadRad = (newTarget.headingDeg * Math.PI) / 180;
+      const wezAspect = Math.abs(normalizeAngleRad(wezTargetHeadRad - bearingTargetToShooter)) * 180 / Math.PI;
       currentWez = computeDLZ(
         m, shooterState.altFt, shooterState.speedMs / 0.514444,
         newTarget.altFt, newTarget.speedMs / 0.514444, wezAspect,
@@ -697,11 +826,134 @@ export function runSimulation(cfg: ScenarioConfig): {
     }
     wezCounter++;
 
+    // --- Step secondary salvo missiles ---
+    for (const slot of secondarySlots) {
+      if (slot.done) continue;
+
+      if (time >= slot.launchTime && slot.tFlight === 0) {
+        // Launch this slot now
+        slot.state = createMissileState(
+          shooterState.x, shooterState.y, shooterState.headingDeg, shooterState.speedMs, shooterState.altFt,
+        );
+        slot.lastKnownX = newTarget.x;
+        slot.lastKnownY = newTarget.y;
+      }
+
+      if (time >= slot.launchTime) {
+        slot.tFlight += DT;
+        const sFlight = slot.tFlight;
+
+        // Seeker activation
+        const sdx = newTarget.x - slot.state.x;
+        const sdy = newTarget.y - slot.state.y;
+        const sRange = Math.sqrt(sdx * sdx + sdy * sdy);
+        if (!slot.state.active && (m.type === 'ARH' || m.type === 'IR') && sRange <= seekerRangeM) {
+          slot.state = { ...slot.state, active: true };
+        }
+        if (m.type === 'SARH' && !slot.state.active) {
+          slot.state = { ...slot.state, active: true };
+        }
+
+        if (!slot.seduced && slot.state.active) {
+          slot.lastKnownX = newTarget.x;
+          slot.lastKnownY = newTarget.y;
+        }
+
+        // Re-acquisition
+        if (slot.seduced && time >= slot.seductionEndTime && sRange <= seekerRangeM * 1.5) {
+          slot.seduced = false;
+        }
+
+        const sBurning = sFlight < burnTime;
+        let sCurrentMass: number;
+        let sThrustForce: number;
+        if (useMultiPhase) {
+          const [thr, mss] = getThrustAndMass(sFlight, propPhases, mass);
+          sThrustForce = thr;
+          sCurrentMass = mss;
+        } else {
+          sCurrentMass = sBurning ? mass - (mass - massBurnout) * (sFlight / burnTime) : massBurnout;
+          sThrustForce = sBurning ? thrust : 0;
+        }
+
+        const sMz = slot.state.altFt * FT_TO_M;
+        const sTz = newTarget.altFt * FT_TO_M;
+        const sGuidX = slot.seduced ? slot.lastKnownX : newTarget.x;
+        const sGuidY = slot.seduced ? slot.lastKnownY : newTarget.y;
+
+        const sGuidOut = proportionalNav({
+          mx: slot.state.x, my: slot.state.y, mz: sMz,
+          mvx: slot.state.vx, mvy: slot.state.vy, mvz: slot.state.vz,
+          tx: sGuidX, ty: sGuidY, tz: slot.seduced ? sMz : sTz,
+          tvx: slot.seduced ? 0 : newTarget.vx,
+          tvy: slot.seduced ? 0 : newTarget.vy,
+          tvz: slot.seduced ? 0 : (newTarget.vzMs ?? 0),
+          navConst: getPNGain(sRange, pnSchedule, navN),
+        });
+
+        let sAx: number, sAy: number, sAz: number;
+        if (sFlight < controlDelay) {
+          sAx = 0; sAy = 0; sAz = 0;
+        } else {
+          ({ ax: sAx, ay: sAy, az: sAz } = clampAcceleration(sGuidOut.ax, sGuidOut.ay, sGuidOut.az, gLimit, slot.state.speedMs));
+        }
+
+        const sSpeed3D = Math.sqrt(slot.state.vx ** 2 + slot.state.vy ** 2 + slot.state.vz ** 2);
+        const sMach = sSpeed3D / speedOfSound(slot.state.altFt);
+        const sECd = cxModel ? getCxDCS(sMach, cxModel) : cd * machDragMultiplierFallback(sMach);
+        const sFDrag = dragForce(sSpeed3D, slot.state.altFt, sECd, area);
+        const sInvMass = 1 / sCurrentMass;
+        const sSafe = Math.max(sSpeed3D, 0.001);
+        const sTAx = sThrustForce * sInvMass * (slot.state.vx / sSafe);
+        const sTAy = sThrustForce * sInvMass * (slot.state.vy / sSafe);
+        const sTAz = sThrustForce * sInvMass * (slot.state.vz / sSafe);
+        const sDAx = -(sFDrag * sInvMass) * (slot.state.vx / sSafe);
+        const sDAy = -(sFDrag * sInvMass) * (slot.state.vy / sSafe);
+        const sDAz = -(sFDrag * sInvMass) * (slot.state.vz / sSafe);
+
+        const sNewVz = slot.state.vz + (sAz + sTAz + sDAz - G) * DT;
+        const sNewVx = slot.state.vx + (sAx + sTAx + sDAx) * DT;
+        const sNewVy = slot.state.vy + (sAy + sTAy + sDAy) * DT;
+        const sNewSpeed = Math.sqrt(sNewVx ** 2 + sNewVy ** 2 + sNewVz ** 2);
+        const sNewAlt = Math.max(0, slot.state.altFt + (sNewVz * DT) / FT_TO_M);
+        const sNewMx = slot.state.x + sNewVx * DT;
+        const sNewMy = slot.state.y + sNewVy * DT;
+
+        // Hit/miss check
+        const sCpa = closestApproachDist(
+          slot.state.x, slot.state.y, slot.state.altFt * FT_TO_M,
+          sNewMx, sNewMy, sNewAlt * FT_TO_M,
+          newTarget.x, newTarget.y, newTarget.altFt * FT_TO_M,
+        );
+        if (!slot.seduced && sCpa < KILL_RADIUS_M) {
+          slot.done = true;
+        }
+        if (sNewSpeed < 50 || (sNewAlt <= 0 && sNewVz < 0)) {
+          slot.done = true;
+        }
+
+        const sTrail = [...slot.state.trail, { x: slot.state.x, y: slot.state.y, alt: slot.state.altFt }];
+        if (sTrail.length > 500) sTrail.shift();
+
+        const sEnergyFrac = Math.min(1, sNewSpeed / maxSpeedMs);
+        slot.state = {
+          ...slot.state,
+          x: sNewMx, y: sNewMy, vx: sNewVx, vy: sNewVy, vz: sNewVz,
+          speedMs: sNewSpeed, altFt: sNewAlt,
+          timeFlight: sFlight,
+          motorBurning: sBurning,
+          active: slot.state.active,
+          energy: sEnergyFrac,
+          trail: sTrail,
+        };
+      }
+    }
+
     targetState = newTarget;
     time += DT;
 
     const rwrFrame = computeRWR(targetState, shooterState, missileState, m, seekerRangeM, hasMaws);
-    frames.push(buildFrame(time, missileState, shooterState, targetState, range, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrFrame, currentWez));
+    frames.push(buildFrame(time, snapshotMissiles(missileState), shooterState, targetState, range, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrFrame, currentWez, datalinkActive, activeCMObjects));
   }
 
   if (time >= maxTime && !hitDetected) {
@@ -763,7 +1015,7 @@ export function runSimulation(cfg: ScenarioConfig): {
 
 function buildFrame(
   time: number,
-  missile: MissileState,
+  missiles: MissileState[],
   shooter: AircraftState,
   target: AircraftState,
   range: number,
@@ -772,20 +1024,26 @@ function buildFrame(
   cmEvent?: CMEvent,
   rwr?: RWRState,
   wez?: WEZResult,
+  datalinkActive?: boolean,
+  countermeasures?: CMObject[],
 ): SimFrame {
   const tti = cv > 0 ? range / cv : 9999;
+  const lead = missiles[0];
   return {
     time,
-    missile: { ...missile },
+    missiles: missiles.map((m) => ({ ...m })),
+    missile: { ...lead },   // backward compat alias
     shooter: { ...shooter },
     target: { ...target },
     range,
     closingVelocity: cv,
     timeToImpact: tti,
-    energyFraction: missile.energy,
+    energyFraction: lead.energy,
     cmEvent,
     rwr,
     wez,
+    datalinkActive,
+    countermeasures: countermeasures ? [...countermeasures] : [],
   };
 }
 

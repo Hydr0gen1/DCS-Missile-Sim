@@ -4,9 +4,32 @@ import aircraftJson from '../data/aircraft.json';
 import type { MissileData, AircraftData } from '../data/types';
 import type { ScenarioConfig, SimFrame, EngagementResult, SimStatus } from '../physics/engagement';
 import type { ManeuverType } from '../physics/aircraft';
+import type { ShooterManeuverType } from '../data/types';
 
-export type AppMode = 'tactical' | 'envelope' | 'editor';
+export type AppMode = 'tactical' | 'envelope' | 'editor' | 'compare';
 export type ShooterRole = 'aircraft' | 'ground';
+
+export interface ComparisonEntry {
+  id: number;
+  label: string;           // auto-generated: missile name + key params
+  missileName: string;
+  targetManeuver: string;
+  rangeNm: number;
+  aspectAngleDeg: number;
+  targetAlt: number;
+  targetSpeed: number;
+  shooterAlt: number;
+  pk: number;
+  hit: boolean;
+  timeOfFlight: number;
+  terminalSpeedMach: number;
+  missDistance: number;
+  fPoleNm: number;
+  aPoleNm: number;
+  verdict: string;
+  chaffSalvosUsed: number;
+  flareSalvosUsed: number;
+}
 
 interface SimStore {
   // Data
@@ -36,6 +59,12 @@ interface SimStore {
   rangeNm: number;
   aspectAngleDeg: number;
   selectedMissileId: string;
+  /** Shooter post-launch maneuver */
+  shooterManeuver: ShooterManeuverType;
+  /** Number of missiles in the salvo (1-4) */
+  salvoCount: number;
+  /** Seconds between missile launches */
+  salvoInterval_s: number;
 
   // Playback
   simFrames: SimFrame[];
@@ -53,6 +82,10 @@ interface SimStore {
 
   // Mode
   appMode: AppMode;
+
+  // Comparison table
+  comparisonEntries: ComparisonEntry[];
+  comparisonNextId: number;
 
   // Actions
   setMissiles: (m: MissileData[]) => void;
@@ -78,6 +111,9 @@ interface SimStore {
   setAppMode: (mode: AppMode) => void;
   addTargetWaypoint: (wp: { x: number; y: number }) => void;
   clearTargetWaypoints: () => void;
+  addComparisonEntry: (entry: Omit<ComparisonEntry, 'id'>) => void;
+  removeComparisonEntry: (id: number) => void;
+  clearComparisonEntries: () => void;
 }
 
 export const useSimStore = create<SimStore>((set) => ({
@@ -103,6 +139,9 @@ export const useSimStore = create<SimStore>((set) => ({
   rangeNm: 20,
   aspectAngleDeg: 0,
   selectedMissileId: 'test-round',
+  shooterManeuver: 'none',
+  salvoCount: 1,
+  salvoInterval_s: 2,
 
   simFrames: [],
   currentFrameIdx: 0,
@@ -118,6 +157,8 @@ export const useSimStore = create<SimStore>((set) => ({
   shooterStartY: 0,
 
   appMode: 'tactical',
+  comparisonEntries: [],
+  comparisonNextId: 1,
 
   setMissiles: (m) => set({ missiles: m }),
   updateMissile: (id, patch) =>
@@ -170,4 +211,12 @@ export const useSimStore = create<SimStore>((set) => ({
   addTargetWaypoint: (wp) =>
     set((s) => ({ targetWaypoints: [...s.targetWaypoints, wp] })),
   clearTargetWaypoints: () => set({ targetWaypoints: [] }),
+  addComparisonEntry: (entry) =>
+    set((s) => ({
+      comparisonEntries: [...s.comparisonEntries, { ...entry, id: s.comparisonNextId }],
+      comparisonNextId: s.comparisonNextId + 1,
+    })),
+  removeComparisonEntry: (id) =>
+    set((s) => ({ comparisonEntries: s.comparisonEntries.filter((e) => e.id !== id) })),
+  clearComparisonEntries: () => set({ comparisonEntries: [] }),
 }));

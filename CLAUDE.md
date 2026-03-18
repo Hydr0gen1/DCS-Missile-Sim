@@ -13,6 +13,11 @@ A DCS World-accurate missile engagement simulator built with React, TypeScript, 
 - RWR / MAWS threat display (sector-accurate, gated on missile closure)
 - Launch envelope plot (binary-search Rmax/NEZ/Rmin at each aspect)
 - Missile editor
+- Shooter post-launch maneuver (crank/pump/drag) + datalink gate
+- SARH IOG vs pure-SARH guidance tiers
+- Salvo mode (1–4 missiles, configurable interval)
+- CM visual objects (flares/chaff spawned, tracked, rendered in 2D+3D)
+- Multi-engagement comparison table with sortable columns and CSV export
 
 **Target platform:** Web browser (Vite/React SPA, no backend)
 
@@ -31,6 +36,7 @@ src/
 │   ├── missile.ts             ← Drag formula, DCS Cx model, multi-phase thrust
 │   ├── guidance.ts            ← ProNav, range-dependent PN gains
 │   ├── aircraft.ts            ← Aircraft state, maneuver logic (crank/notch/break)
+│   ├── shooterManeuver.ts     ← Shooter post-launch maneuver (crank/pump/drag) + gimbal gate
 │   └── engagement.ts          ← Main simulation loop (DT=0.05s)
 ├── store/
 │   └── simStore.ts            ← Zustand global state
@@ -42,7 +48,8 @@ src/
     ├── TacticalDisplay3D.tsx  ← Three.js 3D view
     ├── EnvelopePlot.tsx       ← SVG launch envelope chart
     ├── RWRDisplay.tsx         ← RWR/MAWS threat scope
-    └── MissileEditor.tsx      ← Missile data editor
+    ├── MissileEditor.tsx      ← Missile data editor
+    └── ComparisonPanel.tsx    ← Multi-engagement comparison table (COMPARE tab)
 tools/
 ├── dcs_data_extractor.py      ← Main extraction CLI
 ├── lua_parser.py              ← DCS Lua table parser
@@ -286,9 +293,49 @@ Ground-launched SAMs:
 | break | 9G | Max-G turn perpendicular to missile |
 | notch | 4G | Beam aspect + 100 ft/s descent |
 | crank | 3G | 50° off missile bearing |
-| bunt | — | Dive 250 ft/s + accelerate |
+| bunt | — | Dive 250 ft/s (dead code for speed boost removed) |
 
 Minimum altitude floor: 500 ft AGL (increased from 200 ft to prevent unrealistic terrain-skimming)
+
+### 7. Shooter Post-Launch Maneuvers (shooterManeuver.ts)
+
+| Type | Behavior |
+|------|---------|
+| none | Straight & level (default) |
+| crank_left | Turn left to put target at 70° gimbal edge |
+| crank_right | Turn right to put target at 70° gimbal edge |
+| pump | Crank right 10s, then recommit toward target |
+| drag | Turn 180° cold to maximize F-pole |
+
+**Datalink gate** (`gimbalAngle` function): computes angle between shooter heading and bearing to target. If > `radarGimbalDeg`, datalink is lost. Events: 'datalink_lost' / 'datalink_restored' in `DetectionEvent.type`.
+
+**SARH IOG tiers** (controlled by `MissileData.hasIOG`):
+- `hasIOG=true` (AIM-7M, R-27ER): dead-reckon mid-course if illuminator lost, resume when restored
+- `hasIOG=false` (AIM-7E): go ballistic immediately when datalink lost
+
+### 8. Salvo Mode (ScenarioConfig.salvoCount / salvoInterval_s)
+
+- `salvoCount` 1–4 missiles per engagement (default 1)
+- `salvoInterval_s` time between launches (default 2s)
+- `SimFrame.missiles[]` contains all missile states (lead + secondaries)
+- `SimFrame.missile` is a backward-compat alias for `missiles[0]`
+- Secondary missiles share target state with lead but have independent kinematics/seekers
+- CM dispensing is gated on lead missile only (target defends against closest threat)
+
+### 9. CM Visual Objects (types.ts → CMObject, engagement.ts → activeCMObjects)
+
+- `CMObject`: `{id, type, x, y, altFt, vx, vy, vzMs, lifetime, maxLifetime, opacity}`
+- Flares: deployed at 30% aircraft velocity, fall at 15 m/s, 3s lifetime
+- Chaff: drift at 5% aircraft velocity, fall at 2 m/s, 8s lifetime
+- `SimFrame.countermeasures[]` snapshots live CMObjects each tick
+- Rendered: yellow squares (flares) / cyan squares (chaff) in 2D canvas and 3D Three.js
+
+### 10. Comparison Table (ComparisonPanel.tsx, simStore.ComparisonEntry)
+
+- `ComparisonEntry`: records missile, maneuver, range, aspect, Pk, hit, TOF, terminal Mach, miss dist, F/A-pole, verdict
+- "Add Current" button in COMPARE tab adds active `simResult` to the table
+- Columns sortable by click; CSV export via `Blob` + `<a download>`
+- Persists in Zustand store across tab switches
 
 ---
 

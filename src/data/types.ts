@@ -61,6 +61,14 @@ export interface MissileData {
    */
   ccm_k0: number | null;
 
+  /**
+   * True if this radar-guided missile has Inertial/GPS midcourse guidance (IOG),
+   * allowing it to home on last-known target if the datalink is lost temporarily.
+   * AIM-120C/D (ARH with IOG) and R-27ER (SARH with IOG) set this true.
+   * AIM-7E (pure SARH) sets this false — ballistic if illuminator lost.
+   */
+  hasIOG?: boolean;
+
   /** True if this is a synthetic test round, not a real weapon */
   isSynthetic?: boolean;
 
@@ -154,11 +162,29 @@ export interface WEZResult {
   rmin_m: number;
 }
 
+/** Shooter post-launch maneuver type */
+export type ShooterManeuverType = 'none' | 'crank_left' | 'crank_right' | 'pump' | 'drag';
+
 /** Pre-launch radar detection event */
 export interface DetectionEvent {
   time: number;
-  type: 'search_detected' | 'stt_lock' | 'launch' | 'missile_active';
+  type: 'search_detected' | 'stt_lock' | 'launch' | 'missile_active' | 'datalink_lost' | 'datalink_restored';
   description: string;
+}
+
+/** Countermeasure object tracked per-frame for visual rendering */
+export interface CMObject {
+  id: number;
+  type: 'chaff' | 'flare';
+  x: number;
+  y: number;
+  altFt: number;
+  vx: number;      // m/s
+  vy: number;      // m/s
+  vzMs: number;    // m/s (negative = falling)
+  lifetime: number;    // time remaining (s)
+  maxLifetime: number;
+  opacity: number;
 }
 
 // ── RWR / MAWS types ──────────────────────────────────────────────────────────
