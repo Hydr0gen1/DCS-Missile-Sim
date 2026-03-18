@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { T } from './ui/theme';
 import { useSimStore } from './store/simStore';
 import SetupPanel from './ui/SetupPanel';
 import TacticalDisplay from './ui/TacticalDisplay';
@@ -70,7 +71,7 @@ export default function App() {
         </div>
         {simResult && appMode === 'tactical' && (
           <button
-            style={{ ...styles.navBtn, borderColor: '#00aa44', color: '#00cc66', marginLeft: 8 }}
+            style={{ ...styles.navBtn, borderColor: T.success, color: T.success, marginLeft: 8 }}
             onClick={() => setShowSummary(true)}
           >
             RESULTS
@@ -133,27 +134,28 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     height: '100vh',
-    background: '#060a06',
-    color: '#aaccaa',
-    fontFamily: 'Share Tech Mono, monospace',
+    background: T.bgBase,
+    color: T.text,
+    fontFamily: T.fontUI,
     userSelect: 'none',
     overflow: 'hidden',
   },
   topBar: {
     display: 'flex',
     alignItems: 'center',
-    padding: '5px 14px',
-    background: '#080c08',
-    borderBottom: '1px solid #1a3a1a',
+    padding: '6px 16px',
+    background: T.bgSurface,
+    borderBottom: `1px solid ${T.border}`,
     gap: 16,
     flexShrink: 0,
   },
   appTitle: {
-    color: '#00ff80',
-    fontSize: 14,
-    fontWeight: 'bold',
-    letterSpacing: 3,
+    color: T.accentBright,
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 2,
     whiteSpace: 'nowrap',
+    fontFamily: T.fontUI,
   },
   nav: {
     display: 'flex',
@@ -161,39 +163,44 @@ const styles: Record<string, React.CSSProperties> = {
   },
   navBtn: {
     background: 'transparent',
-    border: '1px solid #1a3a1a',
-    color: '#557755',
-    fontFamily: 'Share Tech Mono, monospace',
+    border: `1px solid ${T.border}`,
+    color: T.textDim,
+    fontFamily: T.fontUI,
     fontSize: 11,
-    padding: '4px 12px',
+    fontWeight: '500',
+    padding: '4px 14px',
     cursor: 'pointer',
-    letterSpacing: 1,
+    letterSpacing: 0.5,
+    borderRadius: 4,
+    transition: 'background 0.15s, color 0.15s',
   },
   navBtnActive: {
-    background: '#0d1a0d',
-    borderColor: '#00aa44',
-    color: '#00ff80',
+    background: T.bgRaised,
+    borderColor: T.accent,
+    color: T.accentBright,
   },
   hint: {
     marginLeft: 'auto',
-    color: '#334433',
+    color: T.textFaint,
     fontSize: 9,
-    letterSpacing: 1,
+    letterSpacing: 0.5,
+    fontFamily: T.fontMono,
   },
   viewBtn: {
     background: 'transparent',
-    border: '1px solid #1a3a1a',
-    color: '#557755',
-    fontFamily: 'Share Tech Mono, monospace',
+    border: `1px solid ${T.border}`,
+    color: T.textDim,
+    fontFamily: T.fontUI,
     fontSize: 10,
-    padding: '2px 10px',
+    fontWeight: '500',
+    padding: '3px 12px',
     cursor: 'pointer',
-    letterSpacing: 1,
+    borderRadius: 3,
   },
   viewBtnActive: {
-    background: '#0d1a0d',
-    borderColor: '#00aa44',
-    color: '#00ff80',
+    background: T.bgRaised,
+    borderColor: T.accent,
+    color: T.accentBright,
   },
   main: {
     display: 'flex',

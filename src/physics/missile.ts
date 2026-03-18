@@ -4,10 +4,11 @@ import type { MissileData } from '../data/types';
 export interface MissileState {
   x: number;          // m (world coords)
   y: number;          // m (world coords)
-  vx: number;         // m/s
-  vy: number;         // m/s
+  vx: number;         // m/s (horizontal east)
+  vy: number;         // m/s (horizontal north)
+  vz: number;         // m/s (vertical, positive = climbing)
   altFt: number;      // ft
-  speedMs: number;    // m/s
+  speedMs: number;    // m/s (horizontal magnitude)
   timeFlight: number; // s
   motorBurning: boolean;
   active: boolean;    // seeker gone active
@@ -58,6 +59,7 @@ export function createMissileState(
     y: shooterY,
     vx: speedMs * Math.sin(rad),
     vy: speedMs * Math.cos(rad),
+    vz: 0,
     altFt,
     speedMs,
     timeFlight: 0,

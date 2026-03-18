@@ -1,6 +1,7 @@
 import { useSimStore } from '../store/simStore';
 import { M_TO_NM } from '../physics/atmosphere';
 import type { CMEvent } from '../physics/engagement';
+import { T } from './theme';
 
 export default function ResultsPanel() {
   const { simResult, simError, simStatus, simFrames, currentFrameIdx } = useSimStore();
@@ -35,8 +36,8 @@ export default function ResultsPanel() {
               {(frame.energyFraction * 100).toFixed(0)}%
             </span>
           } />
-          <Row label="SEEKER" value={frame.missile.active ? <span style={{ color: '#00ff80' }}>ACTIVE</span> : 'SILENT'} />
-          <Row label="MOTOR" value={frame.missile.motorBurning ? <span style={{ color: '#ffaa00' }}>BURNING</span> : 'COAST'} />
+          <Row label="SEEKER" value={frame.missile.active ? <span style={{ color: T.success }}>ACTIVE</span> : 'SILENT'} />
+          <Row label="MOTOR" value={frame.missile.motorBurning ? <span style={{ color: T.warning }}>BURNING</span> : 'COAST'} />
           {frame.cmEvent && <CMEventBadge event={frame.cmEvent} />}
         </div>
       )}
@@ -85,9 +86,9 @@ export default function ResultsPanel() {
 
 function CMEventBadge({ event }: { event: CMEvent }) {
   const color =
-    event.type === 'flare_seduced' ? '#ff8800' :
-    event.type === 'chaff_seduced' ? '#00aaff' :
-    event.type === 'reacquired' ? '#00ff80' : '#888888';
+    event.type === 'flare_seduced' ? T.typeIR :
+    event.type === 'chaff_seduced' ? T.typeARH :
+    event.type === 'reacquired' ? T.success : T.textDim;
   const label =
     event.type === 'flare_seduced' ? `FLARE SEDUCED (P=${(event.probability * 100).toFixed(0)}%)` :
     event.type === 'chaff_seduced' ? `CHAFF SEDUCED (P=${(event.probability * 100).toFixed(0)}%)` :
@@ -103,79 +104,84 @@ function CMEventBadge({ event }: { event: CMEvent }) {
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-      <span style={{ color: '#556655', fontSize: 10 }}>{label}</span>
-      <span style={{ color: '#aaccaa', fontSize: 10 }}>{value}</span>
+      <span style={{ color: T.textDim, fontSize: 10 }}>{label}</span>
+      <span style={{ color: T.text, fontSize: 10, fontFamily: T.fontMono }}>{value}</span>
     </div>
   );
 }
 
 function pkColor(pk: number): string {
-  if (pk >= 0.8) return '#00ff80';
-  if (pk >= 0.5) return '#ffaa00';
-  return '#ff4444';
+  if (pk >= 0.8) return T.success;
+  if (pk >= 0.5) return T.warning;
+  return T.danger;
 }
 
 function verdictColor(pk: number): string {
-  if (pk >= 0.8) return '#00ff80';
-  if (pk >= 0.5) return '#ffaa00';
-  return '#ff4444';
+  if (pk >= 0.8) return T.success;
+  if (pk >= 0.5) return T.warning;
+  return T.danger;
 }
 
 function energyColor(e: number): string {
-  if (e > 0.6) return '#00ff80';
-  if (e > 0.3) return '#ffaa00';
-  return '#ff3333';
+  if (e > 0.6) return T.success;
+  if (e > 0.3) return T.warning;
+  return T.danger;
 }
 
 const styles: Record<string, React.CSSProperties> = {
   panel: {
-    width: 190,
-    padding: '8px 10px',
-    background: '#0a0e0a',
-    borderLeft: '1px solid #1a3a1a',
-    fontFamily: 'Share Tech Mono, monospace',
+    width: 200,
+    padding: '10px 12px',
+    background: T.bgSurface,
+    borderLeft: `1px solid ${T.border}`,
+    fontFamily: T.fontUI,
     fontSize: 11,
-    color: '#aaccaa',
+    color: T.text,
     height: '100%',
     overflowY: 'auto',
     boxSizing: 'border-box',
   },
   title: {
-    color: '#00ff80',
+    color: T.accentBright,
     fontSize: 11,
-    letterSpacing: 2,
+    letterSpacing: 1.5,
     marginBottom: 8,
-    fontWeight: 'bold',
+    fontWeight: '600',
+    textTransform: 'uppercase' as const,
   },
   section: {
     marginBottom: 12,
     paddingBottom: 8,
-    borderBottom: '1px solid #1a2a1a',
+    borderBottom: `1px solid ${T.borderDim}`,
   },
   sectionTitle: {
-    color: '#557755',
+    color: T.textDim,
     fontSize: 9,
-    letterSpacing: 2,
+    letterSpacing: 1.5,
     marginBottom: 5,
+    fontWeight: '600',
+    textTransform: 'uppercase' as const,
   },
   verdict: {
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '600',
     marginBottom: 6,
-    letterSpacing: 1,
+    letterSpacing: 0.5,
+    fontFamily: T.fontMono,
   },
   error: {
-    color: '#ff6655',
+    color: T.danger,
     fontSize: 10,
     lineHeight: 1.5,
-    background: '#1a0000',
+    background: '#2a1010',
     padding: 6,
-    border: '1px solid #aa2222',
+    border: `1px solid ${T.dangerDim}`,
+    borderRadius: 3,
   },
   idle: {
-    color: '#446644',
+    color: T.textDim,
     fontSize: 10,
-    lineHeight: 1.5,
+    lineHeight: 1.6,
     marginTop: 10,
   },
 };
