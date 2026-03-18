@@ -13,7 +13,7 @@ export interface MissileState {
   motorBurning: boolean;
   active: boolean;    // seeker gone active
   energy: number;     // 0–1 normalized energy remaining
-  trail: Array<{ x: number; y: number }>;
+  trail: Array<{ x: number; y: number; alt: number }>;
 }
 
 export interface MissingFields {
@@ -66,7 +66,7 @@ export function createMissileState(
     motorBurning: true,
     active: false,
     energy: 1,
-    trail: [{ x: shooterX, y: shooterY }],
+    trail: [{ x: shooterX, y: shooterY, alt: altFt }],
   };
 }
 

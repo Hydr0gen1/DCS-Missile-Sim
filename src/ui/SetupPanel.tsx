@@ -97,7 +97,7 @@ export default function SetupPanel() {
         <select
           style={styles.select}
           value={aircraft[targetAircraftId]?.id ?? 'generic'}
-          onChange={(e) => setScenario({ targetAircraftId: aircraft.findIndex((a) => a.id === e.target.value) })}
+          onChange={(e) => { const idx = aircraft.findIndex((a) => a.id === e.target.value); setScenario({ targetAircraftId: idx >= 0 ? idx : 0 }); }}
         >
           {aircraft.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>

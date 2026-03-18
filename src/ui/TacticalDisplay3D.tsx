@@ -217,7 +217,7 @@ function SceneContent() {
   // Missile trail with altitude-aware points
   const trailPoints: [number, number, number][] = useMemo(() => {
     if (!frame || frame.missile.trail.length < 2) return [];
-    return frame.missile.trail.map(({ x, y }) => worldTo3D(x, y, frame.missile.altFt));
+    return frame.missile.trail.map(({ x, y, alt }) => worldTo3D(x, y, alt));
   }, [frame]);
 
   // Range rings on ground (centered on target start position)

@@ -29,7 +29,7 @@ function findRmax(
 ): number {
   // Quick check: can it hit at any range?
   try {
-    const probe = runSimulation({ ...cfg, aspectAngleDeg: aspectDeg, rangeNm: loNm + 0.5 });
+    const probe = runSimulation({ ...cfg, aspectAngleDeg: aspectDeg, rangeNm: loNm });
     if (!probe.result.hit) return 0;
   } catch { return 0; }
 

@@ -20,10 +20,10 @@ const G = 9.80665;
  */
 function machDragMultiplier(mach: number): number {
   if (mach < 0.8) return 1.0;
-  if (mach < 1.0) return 1.0 + 3.0 * ((mach - 0.8) / 0.2); // rapid transonic rise
-  if (mach < 1.4) return 4.0 - 1.5 * ((mach - 1.0) / 0.4); // peak at M1, decay
-  if (mach < 3.0) return 2.5 - 0.8 * ((mach - 1.4) / 1.6); // supersonic decay
-  return 1.7; // hypersonic plateau
+  if (mach < 1.0) return 1.0 + 1.5 * ((mach - 0.8) / 0.2); // transonic rise → 2.5
+  if (mach < 1.2) return 2.5 - 0.5 * ((mach - 1.0) / 0.2);  // peak at M1, decay → 2.0
+  if (mach < 3.0) return 2.0 - 0.5 * ((mach - 1.2) / 1.8);  // supersonic decay → 1.5
+  return 1.5;
 }
 
 export interface ScenarioConfig {
@@ -467,7 +467,7 @@ export function runSimulation(cfg: ScenarioConfig): {
       break;
     }
 
-    const newTrail = [...missileState.trail, { x: missileState.x, y: missileState.y }];
+    const newTrail = [...missileState.trail, { x: missileState.x, y: missileState.y, alt: missileState.altFt }];
     if (newTrail.length > 500) newTrail.shift();
 
     missileState = {
@@ -486,7 +486,7 @@ export function runSimulation(cfg: ScenarioConfig): {
     };
 
     // Track peak speed and distance traveled
-    distanceTraveledM += newSpeed * DT;
+    distanceTraveledM += newSpeed3D * DT;
     if (newSpeed > peakSpeedMs) {
       peakSpeedMs = newSpeed;
       altAtPeakSpeed = newAlt;
