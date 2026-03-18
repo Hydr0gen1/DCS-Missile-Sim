@@ -363,7 +363,9 @@ export function runSimulation(cfg: ScenarioConfig): {
     );
 
     // Hit detection (only when not seduced)
-    if (!seduced && range3D < 20) {
+    // 75 m kill radius covers proximity-fuze lethal range and prevents
+    // fast missiles from stepping over the 20 m threshold at DT=0.05 s.
+    if (!seduced && range3D < 75) {
       hitDetected = true;
       const fdx = shooterState.x - newTarget.x;
       const fdy = shooterState.y - newTarget.y;
@@ -484,6 +486,27 @@ export function runSimulation(cfg: ScenarioConfig): {
       energy: energyFrac,
       trail: newTrail,
     };
+
+    // Second hit check using UPDATED missile position — catches missiles that
+    // step over the target (old pos outside 75 m, new pos inside 75 m).
+    if (!seduced && !hitDetected) {
+      const dAltM2 = (missileState.altFt - newTarget.altFt) * FT_TO_M;
+      const range3D2 = Math.sqrt(
+        (newTarget.x - missileState.x) ** 2 +
+        (newTarget.y - missileState.y) ** 2 +
+        dAltM2 * dAltM2,
+      );
+      if (range3D2 < 75) {
+        hitDetected = true;
+        const fdx2 = shooterState.x - newTarget.x;
+        const fdy2 = shooterState.y - newTarget.y;
+        fPoleNm = Math.sqrt(fdx2 * fdx2 + fdy2 * fdy2) * M_TO_NM;
+        if (!activeRecorded) aPoleNm = fPoleNm;
+        const rwrHit2 = computeRWR(newTarget, shooterState, missileState, m, seekerRangeM, hasMaws);
+        frames.push(buildFrame(time + DT, missileState, shooterState, newTarget, isGroundLaunched ? range3D2 : range, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrHit2));
+        break;
+      }
+    }
 
     // Track peak speed and distance traveled
     distanceTraveledM += newSpeed3D * DT;

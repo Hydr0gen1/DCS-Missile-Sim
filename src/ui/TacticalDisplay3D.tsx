@@ -11,11 +11,10 @@
  */
 import { useRef, useMemo, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Line, Grid } from '@react-three/drei';
+import { Line } from '@react-three/drei';
 import * as THREE from 'three';
 import { useSimStore } from '../store/simStore';
 import { M_TO_NM, NM_TO_M } from '../physics/atmosphere';
-import { AircraftByType, SamByMissileId } from './AircraftModels';
 
 const FT_TO_M = 0.3048;
 
@@ -32,68 +31,87 @@ function circlePoints(cx: number, cz: number, r: number, y: number, segments = 8
   return pts;
 }
 
-// ─── Aircraft entity (positioned + oriented) ────────────────────────────────
+// ─── Aircraft dot ────────────────────────────────────────────────────────────
 
-function AircraftEntity({
-  pos, headingDeg, color, aircraftId,
-}: {
-  pos: [number, number, number];
-  headingDeg: number;
-  color: string;
-  aircraftId: string;
-}) {
-  const groupRef = useRef<THREE.Group>(null);
-
-  useFrame(() => {
-    if (!groupRef.current) return;
-    groupRef.current.position.set(...pos);
-    groupRef.current.rotation.set(0, -(headingDeg * Math.PI) / 180, 0);
-  });
-
+function AircraftEntity({ pos, color }: { pos: [number, number, number]; color: string }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  useFrame(() => { if (meshRef.current) meshRef.current.position.set(...pos); });
   return (
-    <group ref={groupRef}>
-      <AircraftByType id={aircraftId} color={color} />
-    </group>
+    <mesh ref={meshRef}>
+      <sphereGeometry args={[500, 8, 8]} />
+      <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.5} />
+    </mesh>
   );
 }
 
-// ─── Missile entity ──────────────────────────────────────────────────────────
+// ─── Ground launcher dot ──────────────────────────────────────────────────────
 
-function MissileEntity({ pos, vx, vy, burning }: {
-  pos: [number, number, number]; vx: number; vy: number; burning: boolean;
+function GroundLauncherEntity({ pos }: { pos: [number, number, number] }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  useFrame(() => { if (meshRef.current) meshRef.current.position.set(...pos); });
+  return (
+    <mesh ref={meshRef}>
+      <boxGeometry args={[700, 600, 700]} />
+      <meshStandardMaterial color="#00aaff" emissive="#004488" emissiveIntensity={0.4} />
+    </mesh>
+  );
+}
+
+// ─── Missile triangle ─────────────────────────────────────────────────────────
+// ConeGeometry with 3 radial segments = triangle; tip (+Y default) rotated to
+// point along the 3-D velocity vector so the "top" tracks direction of travel.
+
+const _up = new THREE.Vector3(0, 1, 0);
+const _vel = new THREE.Vector3();
+
+function MissileEntity({ pos, vx, vy, vz }: {
+  pos: [number, number, number]; vx: number; vy: number; vz: number;
 }) {
-  const groupRef = useRef<THREE.Group>(null);
-  const headingDeg = (Math.atan2(vx, vy) * 180) / Math.PI;
+  const meshRef = useRef<THREE.Mesh>(null);
 
   useFrame(() => {
-    if (!groupRef.current) return;
-    groupRef.current.position.set(...pos);
-    groupRef.current.rotation.set(0, -(headingDeg * Math.PI) / 180, 0);
+    if (!meshRef.current) return;
+    meshRef.current.position.set(...pos);
+    // Three.js coords: X=east(vx), Y=up(vz), -Z=north(vy)
+    _vel.set(vx, vz, -vy);
+    if (_vel.length() > 0.1) {
+      meshRef.current.quaternion.setFromUnitVectors(_up, _vel.normalize());
+    }
   });
 
   return (
-    <group ref={groupRef}>
-      <mesh>
-        <cylinderGeometry args={[45, 55, 1400, 8]} />
-        <meshStandardMaterial color="#ff8800" emissive="#993300" emissiveIntensity={0.3} />
-      </mesh>
-      <mesh position={[0, 800, 0]}>
-        <coneGeometry args={[65, 500, 8]} />
-        <meshStandardMaterial color="#ffcc44" emissive="#aa6600" emissiveIntensity={0.4} />
-      </mesh>
-      {[0, 90, 180, 270].map((rot, i) => (
-        <mesh key={i} position={[0, -500, 0]} rotation={[0, (rot * Math.PI) / 180, 0]}>
-          <boxGeometry args={[500, 400, 40]} />
-          <meshStandardMaterial color="#cc5500" />
-        </mesh>
+    <mesh ref={meshRef}>
+      <coneGeometry args={[200, 700, 3]} />
+      <meshStandardMaterial color="#ff8800" emissive="#ff4400" emissiveIntensity={0.8} />
+    </mesh>
+  );
+}
+
+// ─── Ground grid (manual lines — more robust than drei Grid) ─────────────────
+
+function GroundGrid({ rangeM }: { rangeM: number }) {
+  const lines = useMemo(() => {
+    const stepMinor = NM_TO_M * 5;   // 5 nm minor
+    const stepMajor = NM_TO_M * 20;  // 20 nm major
+    const extent = Math.max(rangeM * 2.5, NM_TO_M * 60);
+    const count = Math.ceil(extent / stepMinor);
+    const result: Array<{ pts: [number, number, number][]; major: boolean }> = [];
+    for (let i = -count; i <= count; i++) {
+      const pos = i * stepMinor;
+      const major = Math.round(pos / stepMajor) * stepMajor === Math.round(pos) * 1 ||
+        Math.abs(pos % stepMajor) < 100;
+      result.push({ pts: [[pos, 1, -extent], [pos, 1, extent]], major });
+      result.push({ pts: [[-extent, 1, pos], [extent, 1, pos]], major });
+    }
+    return result;
+  }, [rangeM]);
+
+  return (
+    <>
+      {lines.map(({ pts, major }, i) => (
+        <Line key={i} points={pts} color={major ? '#1a4a1a' : '#0d2a0d'} lineWidth={major ? 1 : 0.5} />
       ))}
-      {burning && (
-        <mesh position={[0, -850, 0]}>
-          <coneGeometry args={[80, 600, 8]} />
-          <meshStandardMaterial color="#ff4400" emissive="#ff2200" emissiveIntensity={2} transparent opacity={0.85} />
-        </mesh>
-      )}
-    </group>
+    </>
   );
 }
 
@@ -191,8 +209,6 @@ function SceneContent() {
     simFrames, currentFrameIdx, simStatus,
     maxRangeM, minRangeM, nezM,
     rangeNm, aspectAngleDeg, shooterRole,
-    aircraft, targetAircraftId, shooterAircraftId,
-    selectedMissileId,
   } = useSimStore();
 
   const frame = simFrames[currentFrameIdx];
@@ -211,8 +227,6 @@ function SceneContent() {
   const shooterPos = worldTo3D(sx, sy, shooterAlt);
   const targetPos  = worldTo3D(tx, ty, targetAlt);
   const missilePos = worldTo3D(mx, my, missileAlt);
-
-  const targetAircraftDef = aircraft[targetAircraftId];
 
   // Missile trail with altitude-aware points
   const trailPoints: [number, number, number][] = useMemo(() => {
@@ -254,18 +268,8 @@ function SceneContent() {
       <directionalLight position={[80000, 120000, 60000]} intensity={1.0} castShadow />
       <hemisphereLight args={['#0a1a3a', '#0a1a0a', 0.4]} />
 
-      {/* Ground grid — shooter at origin corner */}
-      <Grid
-        args={[rangeM * 3, rangeM * 3]}
-        cellSize={NM_TO_M * 10}
-        cellColor="#0d2a0d"
-        sectionSize={NM_TO_M * 30}
-        sectionColor="#1a4a1a"
-        fadeDistance={rangeM * 2.5}
-        fadeStrength={1.5}
-        infiniteGrid
-        position={[0, 0, 0]}
-      />
+      {/* Ground grid */}
+      <GroundGrid rangeM={rangeM} />
 
       {/* Range rings */}
       {showRings && maxRangeM > 0 && <Line points={rMaxPts} color="#00ff50" lineWidth={2} />}
@@ -290,26 +294,13 @@ function SceneContent() {
       {frame && <Line points={missilePole} color="#ff8800" lineWidth={0.6} />}
 
       {/* Shooter */}
-      {shooterRole === 'ground' ? (
-        <group position={[shooterPos[0], 0, shooterPos[2]]}>
-          <SamByMissileId missileId={selectedMissileId} />
-        </group>
-      ) : (
-        <AircraftEntity
-          pos={shooterPos}
-          headingDeg={frame?.shooter.headingDeg ?? 0}
-          color="#00aaff"
-          aircraftId={shooterAircraftId}
-        />
-      )}
+      {shooterRole === 'ground'
+        ? <GroundLauncherEntity pos={[shooterPos[0], 0, shooterPos[2]]} />
+        : <AircraftEntity pos={shooterPos} color="#00aaff" />
+      }
 
       {/* Target */}
-      <AircraftEntity
-        pos={targetPos}
-        headingDeg={frame?.target.headingDeg ?? 180}
-        color="#ff4444"
-        aircraftId={targetAircraftDef?.id ?? 'generic'}
-      />
+      <AircraftEntity pos={targetPos} color="#ff4444" />
 
       {/* Missile */}
       {frame && (
@@ -317,7 +308,7 @@ function SceneContent() {
           pos={missilePos}
           vx={frame.missile.vx}
           vy={frame.missile.vy}
-          burning={frame.missile.motorBurning}
+          vz={frame.missile.vz}
         />
       )}
 
