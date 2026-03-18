@@ -55,8 +55,10 @@ function RWRScope({ threats }: { threats: RWRThreat[] }) {
       )}
       {threats.map((t, i) => {
         const color = THREAT_COLORS[t.type] ?? '#ffaa00';
-        const [tx, ty] = bearing2xy(t.bearing, R * 0.88);
+        // Strobe from inner radius to 78% — label at 92% (outside strobe, no overlap)
         const [lx, ly] = bearing2xy(t.bearing, R * 0.2);
+        const [tx, ty] = bearing2xy(t.bearing, R * 0.78);
+        const [labelX, labelY] = bearing2xy(t.bearing, R * 0.94);
         const isActive = t.type === 'active' || t.type === 'launch';
         return (
           <g key={i}>
@@ -67,8 +69,13 @@ function RWRScope({ threats }: { threats: RWRThreat[] }) {
               strokeOpacity={0.6 + t.intensity * 0.4}
               style={isActive ? { animation: 'rwr-blink 0.6s step-start infinite' } : undefined}
             />
+            {/* Small dot at strobe tip */}
+            <circle cx={tx} cy={ty} r={2.5} fill={color}
+              opacity={0.6 + t.intensity * 0.4}
+              style={isActive ? { animation: 'rwr-blink 0.6s step-start infinite' } : undefined}
+            />
             <text
-              x={tx} y={ty}
+              x={labelX} y={labelY}
               textAnchor="middle" dominantBaseline="middle"
               fill={color} fontSize={7}
               fontFamily="Share Tech Mono, monospace"
@@ -195,7 +202,7 @@ export default function RWRDisplay() {
         <span style={{ color: '#ff2222' }}>■</span> ACT/LCH
       </div>
       <div style={{ ...styles.legend, color: '#1a3a1a', marginTop: 1 }}>
-        IR MISSILES = RWR SILENT
+        IR = RWR SILENT · ARH ACTIVE = spike
       </div>
     </div>
   );
