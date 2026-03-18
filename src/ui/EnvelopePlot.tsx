@@ -33,7 +33,7 @@ function findRmax(
     if (!probe.result.hit) return 0;
   } catch { return 0; }
 
-  let bestHitNm = 0;
+  let bestHitNm = loNm;
   for (let i = 0; i < iters; i++) {
     const mid = (loNm + hiNm) / 2;
     try {

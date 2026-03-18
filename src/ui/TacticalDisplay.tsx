@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useSimStore } from '../store/simStore';
 import { M_TO_NM, NM_TO_M } from '../physics/atmosphere';
 
@@ -25,15 +25,143 @@ function worldToCanvas(
 
 export default function TacticalDisplay() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [profileView, setProfileView] = useState(false);
   const {
     simFrames, currentFrameIdx, simStatus, appMode,
     maxRangeM, minRangeM, nezM,
     addTargetWaypoint, targetManeuver, setScenario, clearTargetWaypoints,
     rangeNm, aspectAngleDeg, shooterStartX, shooterStartY,
     shooterRole,
+    shooterAlt: storeShooterAlt,
+    targetAlt: storeTargetAlt,
   } = useSimStore();
 
+  // Toggle profile view on 'P' keypress
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'p' || e.key === 'P') setProfileView(v => !v);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const scale = NM_PX; // px per nm
+
+  // ── Side profile view: range-from-shooter (X) vs altitude (Y) ────────────
+  const drawProfile = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const W = canvas.width;
+    const H = canvas.height;
+
+    ctx.fillStyle = '#080c10';
+    ctx.fillRect(0, 0, W, H);
+
+    const frame = simFrames[currentFrameIdx];
+    const shooterAlt = frame?.shooter.altFt ?? storeShooterAlt;
+    const targetAlt  = frame?.target.altFt  ?? storeTargetAlt;
+
+    // Compute display range: up to the initial engagement range + 20%
+    const maxDispNm = rangeNm * 1.3;
+    const maxAltFt  = Math.max(shooterAlt, targetAlt, frame?.missile.altFt ?? 0, 5000) * 1.4;
+    const padL = 52, padR = 16, padT = 16, padB = 36;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+
+    function toCanvas(rangeNmVal: number, altFtVal: number): [number, number] {
+      const px = padL + (rangeNmVal / maxDispNm) * plotW;
+      const py = padT + plotH - (altFtVal / maxAltFt) * plotH;
+      return [px, py];
+    }
+
+    // Grid lines
+    ctx.strokeStyle = '#1a2a1a';
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([4, 4]);
+    ctx.font = '9px Share Tech Mono, monospace';
+    ctx.fillStyle = '#2a4a2a';
+    for (let r = 0; r <= Math.ceil(maxDispNm); r += 10) {
+      const [px] = toCanvas(r, 0);
+      ctx.beginPath(); ctx.moveTo(px, padT); ctx.lineTo(px, padT + plotH); ctx.stroke();
+      ctx.fillText(`${r}nm`, px - 8, padT + plotH + 14);
+    }
+    for (let a = 0; a <= Math.ceil(maxAltFt / 1000) * 1000; a += 10000) {
+      const [, py] = toCanvas(0, a);
+      if (py < padT || py > padT + plotH) continue;
+      ctx.beginPath(); ctx.moveTo(padL, py); ctx.lineTo(padL + plotW, py); ctx.stroke();
+      ctx.fillText(`${(a / 1000).toFixed(0)}k`, 2, py + 3);
+    }
+    ctx.setLineDash([]);
+
+    // Axis labels
+    ctx.fillStyle = '#3a5a3a';
+    ctx.font = '10px Share Tech Mono, monospace';
+    ctx.fillText('ALT (ft)', 2, padT - 4);
+    ctx.fillText('RANGE (nm)', padL + plotW / 2 - 30, H - 4);
+
+    // Title
+    ctx.fillStyle = '#4a8a4a';
+    ctx.font = '10px Share Tech Mono, monospace';
+    ctx.fillText('PROFILE VIEW  [P] = plan', W - 170, 14);
+
+    if (!frame) {
+      // Static view: shooter and target at initial positions
+      const sx0 = 0;
+      const tgtInitRangeNm = rangeNm;
+      const [sxC, syC] = toCanvas(sx0, storeShooterAlt);
+      const [txC, tyC] = toCanvas(tgtInitRangeNm, storeTargetAlt);
+      ctx.beginPath(); ctx.arc(sxC, syC, 5, 0, 2 * Math.PI); ctx.fillStyle = '#00aaff'; ctx.fill();
+      ctx.fillStyle = '#00aaff'; ctx.font = '10px Share Tech Mono, monospace';
+      ctx.fillText('SHOOTER', sxC + 7, syC + 4);
+      ctx.beginPath(); ctx.arc(txC, tyC, 5, 0, 2 * Math.PI); ctx.fillStyle = '#ff4444'; ctx.fill();
+      ctx.fillStyle = '#ff4444';
+      ctx.fillText('TARGET', txC + 7, tyC + 4);
+      return;
+    }
+
+    // Missile trail in profile
+    if (frame.missile.trail.length > 1) {
+      const { shooter: sh } = frame;
+      const shBaseX = sh.x;
+      const shBaseY = sh.y;
+      ctx.beginPath();
+      let first = true;
+      for (const pt of frame.missile.trail) {
+        const rNm = Math.hypot(pt.x - shBaseX, pt.y - shBaseY) * M_TO_NM;
+        const [px, py] = toCanvas(rNm, pt.alt);
+        if (first) { ctx.moveTo(px, py); first = false; } else { ctx.lineTo(px, py); }
+      }
+      ctx.strokeStyle = 'rgba(255,165,0,0.6)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    // Current missile dot
+    const mrNm = Math.hypot(frame.missile.x - frame.shooter.x, frame.missile.y - frame.shooter.y) * M_TO_NM;
+    const [mxP, myP] = toCanvas(mrNm, frame.missile.altFt);
+    ctx.beginPath(); ctx.arc(mxP, myP, 4, 0, 2 * Math.PI);
+    ctx.fillStyle = energyToColor(frame.missile.energy); ctx.fill();
+
+    // Shooter icon
+    const srNm = 0; // shooter at range 0
+    const [sxP, syP] = toCanvas(srNm, frame.shooter.altFt);
+    ctx.beginPath(); ctx.arc(sxP, syP, 5, 0, 2 * Math.PI); ctx.fillStyle = '#00aaff'; ctx.fill();
+    ctx.fillStyle = '#00aaff'; ctx.font = '10px Share Tech Mono, monospace';
+    ctx.fillText(`${Math.round(frame.shooter.altFt / 1000)}k ft`, sxP + 7, syP + 4);
+
+    // Target icon
+    const trNm = Math.hypot(frame.target.x - frame.shooter.x, frame.target.y - frame.shooter.y) * M_TO_NM;
+    const [txP, tyP] = toCanvas(trNm, frame.target.altFt);
+    ctx.beginPath(); ctx.arc(txP, tyP, 5, 0, 2 * Math.PI); ctx.fillStyle = '#ff4444'; ctx.fill();
+    ctx.fillStyle = '#ff4444'; ctx.font = '10px Share Tech Mono, monospace';
+    ctx.fillText(`${Math.round(frame.target.altFt / 1000)}k ft`, txP + 7, tyP + 4);
+
+    // Missile altitude label
+    ctx.fillStyle = '#ffaa00';
+    ctx.fillText(`MSL ${Math.round(frame.missile.altFt / 1000)}k ft`, mxP + 6, myP - 6);
+  }, [simFrames, currentFrameIdx, simStatus, rangeNm, storeShooterAlt, storeTargetAlt]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -177,22 +305,6 @@ export default function TacticalDisplay() {
     drawVelocityVector(ctx, sx, sy, shooter.vx, shooter.vy, scale, '#00aaff');
     drawVelocityVector(ctx, ttx, tty, target.vx, target.vy, scale, '#ff4444');
 
-    // Energy bar — bottom left
-    const barW = 80;
-    const barH = 8;
-    const barX = 10;
-    const barY = H - 20;
-    ctx.fillStyle = '#111';
-    ctx.fillRect(barX, barY, barW, barH);
-    ctx.fillStyle = energyToColor(missile.energy);
-    ctx.fillRect(barX, barY, barW * missile.energy, barH);
-    ctx.strokeStyle = '#444';
-    ctx.lineWidth = 0.5;
-    ctx.strokeRect(barX, barY, barW, barH);
-    ctx.fillStyle = '#aaa';
-    ctx.font = '9px Share Tech Mono, monospace';
-    ctx.fillText('ENERGY', barX, barY - 3);
-
     // HUD text overlays
     ctx.font = '11px Share Tech Mono, monospace';
 
@@ -218,8 +330,9 @@ export default function TacticalDisplay() {
   }, [simFrames, currentFrameIdx, simStatus, maxRangeM, minRangeM, nezM, rangeNm, aspectAngleDeg, scale, shooterRole]);
 
   useEffect(() => {
-    draw();
-  }, [draw]);
+    if (profileView) drawProfile();
+    else draw();
+  }, [draw, drawProfile, profileView]);
 
   function handleCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
     if (targetManeuver !== 'custom') return;
@@ -248,6 +361,18 @@ export default function TacticalDisplay() {
           display: 'block',
         }}
       />
+      <button
+        onClick={() => setProfileView(v => !v)}
+        style={{
+          position: 'absolute', top: 6, right: 6,
+          background: profileView ? 'rgba(0,180,80,0.18)' : 'rgba(0,0,0,0.5)',
+          border: `1px solid ${profileView ? '#00ff80' : '#2a4a2a'}`,
+          color: profileView ? '#00ff80' : '#4a8a4a',
+          cursor: 'pointer', fontSize: 9,
+          fontFamily: 'Share Tech Mono, monospace',
+          padding: '2px 6px',
+        }}
+      >{profileView ? '[PROFILE]' : '[PLAN]'} P</button>
       {targetManeuver === 'custom' && (
         <div style={{ position: 'absolute', top: 6, left: 6, color: '#ffaa00', fontSize: 10, fontFamily: 'Share Tech Mono, monospace' }}>
           CLICK TO SET WAYPOINTS

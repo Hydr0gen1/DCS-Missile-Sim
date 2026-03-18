@@ -209,12 +209,14 @@ function SceneContent() {
     simFrames, currentFrameIdx, simStatus,
     maxRangeM, minRangeM, nezM,
     rangeNm, aspectAngleDeg, shooterRole,
+    shooterAlt: storeShooterAlt,
+    targetAlt: storeTargetAlt,
   } = useSimStore();
 
   const frame = simFrames[currentFrameIdx];
 
-  const shooterAlt = frame?.shooter.altFt ?? 0;
-  const targetAlt  = frame?.target.altFt  ?? 20000;
+  const shooterAlt = frame?.shooter.altFt ?? storeShooterAlt;
+  const targetAlt  = frame?.target.altFt  ?? storeTargetAlt;
   const missileAlt = frame?.missile.altFt  ?? 0;
 
   const sx = frame?.shooter.x ?? 0;
