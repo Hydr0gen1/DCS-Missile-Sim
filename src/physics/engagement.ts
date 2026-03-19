@@ -383,6 +383,9 @@ export function runSimulation(cfg: ScenarioConfig): {
   // Separate flag for SARH datalink-loss ballistic state (avoids overloading the CM seduced flag)
   let sarhDatalinkLost = false;
 
+  // RWR persistence: threats fade over 6 s on disappearance rather than vanishing instantly
+  const persistentThreats = new Map<string, RWRThreat>();
+
   // CM objects in flight (for visual rendering)
   let activeCMObjects: CMObject[] = [];
   let cmObjectIdCounter = 0;
@@ -745,7 +748,9 @@ export function runSimulation(cfg: ScenarioConfig): {
       const fdy = shooterState.y - newTarget.y;
       fPoleNm = Math.sqrt(fdx * fdx + fdy * fdy) * M_TO_NM;
       if (!activeRecorded) aPoleNm = fPoleNm;
-      const rwrEnergy = computeRWR(newTarget, shooterState, missileState, m, seekerRangeM, hasMaws);
+      const allMsls = [{ state: missileState, done: false }, ...secondarySlots.filter(s => s.tFlight > 0).map(s => ({ state: s.state, done: s.done }))];
+      const rawRwrEnergy = computeRWR(newTarget, shooterState, allMsls, m, seekerRangeM, hasMaws, time, cfg.shooterAircraftData);
+      const rwrEnergy = persistRWR(rawRwrEnergy, persistentThreats, time);
       frames.push(buildFrame(time, snapshotMissiles(missileState), shooterState, newTarget, range, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrEnergy, currentWez, datalinkActive, activeCMObjects));
       break;
     }
@@ -764,7 +769,9 @@ export function runSimulation(cfg: ScenarioConfig): {
       const fdyH = shooterState.y - newTarget.y;
       fPoleNm = Math.sqrt(fdxH * fdxH + fdyH * fdyH) * M_TO_NM;
       if (!activeRecorded) aPoleNm = fPoleNm;
-      const rwrHit = computeRWR(newTarget, shooterState, missileState, m, seekerRangeM, hasMaws);
+      const allMslsHit = [{ state: missileState, done: false }, ...secondarySlots.filter(s => s.tFlight > 0).map(s => ({ state: s.state, done: s.done }))];
+      const rawRwrHit = computeRWR(newTarget, shooterState, allMslsHit, m, seekerRangeM, hasMaws, time, cfg.shooterAircraftData);
+      const rwrHit = persistRWR(rawRwrHit, persistentThreats, time);
       frames.push(buildFrame(time + DT, snapshotMissiles(missileState), shooterState, newTarget, cpa, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrHit, currentWez, datalinkActive, activeCMObjects));
       break;
     }
@@ -985,7 +992,9 @@ export function runSimulation(cfg: ScenarioConfig): {
     targetState = newTarget;
     time += DT;
 
-    const rwrFrame = computeRWR(targetState, shooterState, missileState, m, seekerRangeM, hasMaws);
+    const allMslsFrame = [{ state: missileState, done: false }, ...secondarySlots.filter(s => s.tFlight > 0).map(s => ({ state: s.state, done: s.done }))];
+    const rawRwrFrame = computeRWR(targetState, shooterState, allMslsFrame, m, seekerRangeM, hasMaws, time, cfg.shooterAircraftData);
+    const rwrFrame = persistRWR(rawRwrFrame, persistentThreats, time);
     frames.push(buildFrame(time, snapshotMissiles(missileState), shooterState, targetState, range, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrFrame, currentWez, datalinkActive, activeCMObjects));
   }
 
@@ -1120,93 +1129,171 @@ function normalizeAngleRad(a: number): number {
 // ── RWR / MAWS computation ────────────────────────────────────────────────────
 
 /**
+ * Deterministic bearing noise that drifts slowly (changes every 0.5 s).
+ * Degrades accuracy at long range: ±0° at ≤5 km, ±10° at 150 km+.
+ * Uses a hash of emitterId + time-bucket so noise is stable frame-to-frame.
+ */
+function bearingNoise(bearing: number, rangeM: number, emitterId: string, time: number): number {
+  const maxNoiseDeg = Math.min(10, Math.max(0, (rangeM - 5000) / 145000 * 10));
+  if (maxNoiseDeg < 0.01) return bearing;
+  const bucket = Math.floor(time * 2); // 0.5 s buckets
+  let h = 5381;
+  for (let i = 0; i < emitterId.length; i++) h = (((h << 5) + h) ^ emitterId.charCodeAt(i)) | 0;
+  h = ((h * 1664525 + bucket * 22695477 + 1013904223) | 0) >>> 0;
+  const jitter = (h / 0x100000000 - 0.5) * 2 * maxNoiseDeg;
+  return (bearing + jitter + 360) % 360;
+}
+
+/**
+ * Merge a fresh per-tick RWR snapshot into the persistent threat map.
+ * Active threats are refreshed; absent threats fade over 6 seconds then expire.
+ */
+function persistRWR(
+  raw: RWRState,
+  persistent: Map<string, RWRThreat>,
+  time: number,
+): RWRState {
+  const FADE_S = 6.0;
+  const activeIds = new Set<string>();
+
+  for (const t of raw.radarThreats) {
+    activeIds.add(t.emitterId);
+    persistent.set(t.emitterId, t); // refresh with latest data (lastSeenTime = time)
+  }
+
+  const threats: RWRThreat[] = [];
+  for (const [id, t] of persistent) {
+    if (activeIds.has(id)) {
+      threats.push(t);
+    } else {
+      const age = time - t.lastSeenTime;
+      if (age > FADE_S) { persistent.delete(id); continue; }
+      threats.push({ ...t, intensity: t.intensity * Math.max(0, 1 - age / FADE_S) });
+    }
+  }
+  return { ...raw, radarThreats: threats };
+}
+
+/**
  * Compute RWR and MAWS state from the target aircraft's perspective.
  *
  * RWR detects RADAR emissions only:
- *   - SARH: continuous illumination strobe from shooter bearing
- *   - ARH:  'search' from shooter before seeker active; 'active' from missile bearing after
- *   - IR:   SILENT — IR missiles produce no radar return, RWR cannot detect them
+ *   - SARH: continuous CW illumination from shooter — label = shooter's rwrSymbol
+ *   - ARH pre-pitbull: FCR TWS/STT from shooter bearing — label = shooter's rwrSymbol
+ *   - ARH post-pitbull: active seeker from missile bearing — label = missile's rwrSymbol ("M")
+ *   - IR: SILENT — no radar return, RWR cannot detect them
  *
- * MAWS detects UV/IR motor plumes (all missile types) only if hasMaws===true.
- * MAWS gives coarse 8-sector direction, NOT a precise bearing.
+ * Accepts an array of missiles to support salvo engagements.
+ * Each in-flight missile produces its own MAWS sector and ARH active-seeker threat.
+ * Shooter FCR appears as a single entry regardless of salvo count.
+ *
+ * MAWS detects UV/IR motor plumes (all types) if hasMaws===true; tier 2 also tracks coasting.
  */
 function computeRWR(
   target: AircraftState,
   shooter: AircraftState,
-  missile: MissileState,
+  missiles: Array<{ state: MissileState; done: boolean }>,
   missileData: MissileData,
   seekerRangeM: number,
   hasMaws: boolean,
+  time: number,
+  shooterAircraftData?: AircraftData,
 ): RWRState {
   const radarThreats: RWRThreat[] = [];
   const targetHeadRad = (target.headingDeg * Math.PI) / 180;
 
   /** Bearing from target to point (px,py), relative to target heading, 0–360 */
   function relBearing(px: number, py: number): number {
-    const absRad = Math.atan2(px - target.x, py - target.y); // atan2(dx,dy) = azimuth from north
+    const absRad = Math.atan2(px - target.x, py - target.y);
     return ((absRad - targetHeadRad) * 180 / Math.PI + 360) % 360;
   }
 
   const shooterRangeM = Math.hypot(shooter.x - target.x, shooter.y - target.y);
-  const missileRangeM = Math.hypot(missile.x - target.x, missile.y - target.y);
-  // Short label: first 5 chars without spaces, e.g. "AIM-9" "R-27E" "120C"
-  const shortLabel = missileData.name.replace(/\s+/g, '').slice(0, 5);
+  // Emitter labels: shooter's radar designator pre-pitbull, missile seeker designator post-pitbull
+  const shooterRwrLabel = shooterAircraftData?.rwrSymbol ?? 'U';
+  const missileRwrLabel = missileData.rwrSymbol ?? 'M';
 
-  // Is missile still closing on target? (gate all threats once missile has passed)
-  const mtx = target.x - missile.x, mty = target.y - missile.y;
-  const closingRate = missileRangeM > 1
-    ? (missile.vx * mtx + missile.vy * mty) / missileRangeM
-    : 0;
-  const missileApproaching = closingRate > -50; // allow small negative (terminal proximity)
-
-  // --- RWR: radar threats only (IR missiles have no entry here) ---
+  // ── SARH: shooter continuously illuminates with CW radar — single emitter ──
   if (missileData.type === 'SARH') {
-    // Shooter continuously illuminates target with CW radar — always detectable
-    radarThreats.push({
-      bearing: relBearing(shooter.x, shooter.y),
-      type: missile.active ? 'launch' : 'track',
-      label: shortLabel,
-      intensity: Math.min(1, 50000 / Math.max(shooterRangeM, 1000)),
-    });
-  } else if (missileData.type === 'ARH') {
-    if (!missile.active) {
-      // Pre-active: FCR is in STT/TWS tracking mode to provide mid-course guidance.
-      // Target RWR sees the tracking radar from shooter bearing (track, not launch).
+    const primaryMsl = missiles.find(m => !m.done);
+    if (primaryMsl) {
       radarThreats.push({
-        bearing: relBearing(shooter.x, shooter.y),
-        type: 'track',
-        label: shortLabel,
-        intensity: Math.min(0.7, 30000 / Math.max(shooterRangeM, 1000)),
-      });
-    } else if (missileApproaching) {
-      // Seeker active AND missile still closing: ACTIVE spike from missile bearing
-      radarThreats.push({
-        bearing: relBearing(missile.x, missile.y),
-        type: 'active',
-        label: shortLabel,
-        intensity: Math.min(1, seekerRangeM / Math.max(missileRangeM, 100)),
+        bearing: bearingNoise(relBearing(shooter.x, shooter.y), shooterRangeM, 'shooter-fcr', time),
+        type: primaryMsl.state.active ? 'launch' : 'track',
+        label: shooterRwrLabel,
+        intensity: Math.min(1, 50000 / Math.max(shooterRangeM, 1000)),
+        lastSeenTime: time,
+        emitterId: 'shooter-fcr',
       });
     }
   }
-  // IR missiles: no radar signature — radarThreats stays empty
 
-  // --- MAWS: UV/IR plume detection only within realistic sensor range (~6nm) ---
-  const MAWS_RANGE_M = 11112; // ~6nm, AN/AAR-56/57 spec
-  const mawsActive: MAWSSector[] = [];
-  const mawsWarning = hasMaws && missile.motorBurning && missileRangeM <= MAWS_RANGE_M && missileApproaching;
-  if (mawsWarning) {
-    const missileBearing = relBearing(missile.x, missile.y);
-    // 8 sectors of 45° each, sector 0 = forward arc
-    const sectorIdx = Math.round(missileBearing / 45) % 8;
-    mawsActive.push({ sectorIdx, active: true });
+  // ── ARH: pre-pitbull = shooter FCR (one entry); post-pitbull = each missile seeker ──
+  if (missileData.type === 'ARH') {
+    const anyPrePitbull = missiles.some(m => !m.done && !m.state.active);
+    if (anyPrePitbull) {
+      radarThreats.push({
+        bearing: bearingNoise(relBearing(shooter.x, shooter.y), shooterRangeM, 'shooter-fcr', time),
+        type: 'track',
+        label: shooterRwrLabel,
+        intensity: Math.min(0.7, 30000 / Math.max(shooterRangeM, 1000)),
+        lastSeenTime: time,
+        emitterId: 'shooter-fcr',
+      });
+    }
+    for (let mi = 0; mi < missiles.length; mi++) {
+      const msl = missiles[mi];
+      if (msl.done || !msl.state.active) continue;
+      const mRangeM = Math.hypot(msl.state.x - target.x, msl.state.y - target.y);
+      const mtx = target.x - msl.state.x, mty = target.y - msl.state.y;
+      const cr = mRangeM > 1 ? (msl.state.vx * mtx + msl.state.vy * mty) / mRangeM : 0;
+      if (cr <= -50) continue; // passed target
+      const eid = `missile-${mi}-seeker`;
+      radarThreats.push({
+        bearing: bearingNoise(relBearing(msl.state.x, msl.state.y), mRangeM, eid, time),
+        type: 'active',
+        label: missileRwrLabel,
+        intensity: Math.min(1, seekerRangeM / Math.max(mRangeM, 100)),
+        lastSeenTime: time,
+        emitterId: eid,
+      });
+    }
   }
+  // IR: no radar signature
+
+  // ── MAWS: UV/IR detection for each in-flight missile ────────────────────────
+  const MAWS_RANGE_MOTOR = 11112; // 6 nm — motor plume
+  const MAWS_RANGE_COAST = 5556;  // 3 nm — body UV (tier 2 only)
+  const mawsTier = shooterAircraftData?.mawsTier ?? 1;
+  const mawsActive: MAWSSector[] = [];
+  let mawsWarning = false;
+
+  for (const msl of missiles) {
+    if (msl.done) continue;
+    const mRangeM = Math.hypot(msl.state.x - target.x, msl.state.y - target.y);
+    const mtx2 = target.x - msl.state.x, mty2 = target.y - msl.state.y;
+    const cr2 = mRangeM > 1 ? (msl.state.vx * mtx2 + msl.state.vy * mty2) / mRangeM : 0;
+    if (cr2 <= -50) continue;
+    const canDetectMotor = hasMaws && msl.state.motorBurning && mRangeM <= MAWS_RANGE_MOTOR;
+    const canDetectCoast = hasMaws && mawsTier >= 2 && !msl.state.motorBurning && mRangeM <= MAWS_RANGE_COAST;
+    if (canDetectMotor || canDetectCoast) {
+      mawsWarning = true;
+      const sectorIdx = Math.round(relBearing(msl.state.x, msl.state.y) / 45) % 8;
+      if (!mawsActive.some(s => s.sectorIdx === sectorIdx)) {
+        mawsActive.push({ sectorIdx, active: true });
+      }
+    }
+  }
+
+  const anyActiveApproaching = missileData.type === 'ARH' &&
+    missiles.some(m => !m.done && m.state.active);
 
   return {
     radarThreats,
     mawsWarning,
     mawsSectors: mawsActive,
-    radarWarning: missileData.type === 'SARH' || (missileData.type === 'ARH' && missile.active),
-    launchWarning: missile.active && missileData.type === 'ARH' && missileApproaching,
+    radarWarning: missileData.type === 'SARH' || anyActiveApproaching,
+    launchWarning: anyActiveApproaching,
   };
 }
 

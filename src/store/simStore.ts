@@ -83,6 +83,9 @@ interface SimStore {
   // Mode
   appMode: AppMode;
 
+  // RWR audio
+  rwrAudioMuted: boolean;
+
   // Comparison table
   comparisonEntries: ComparisonEntry[];
   comparisonNextId: number;
@@ -114,6 +117,7 @@ interface SimStore {
   addComparisonEntry: (entry: Omit<ComparisonEntry, 'id'>) => void;
   removeComparisonEntry: (id: number) => void;
   clearComparisonEntries: () => void;
+  setRwrAudioMuted: (v: boolean) => void;
 }
 
 export const useSimStore = create<SimStore>((set) => ({
@@ -157,6 +161,7 @@ export const useSimStore = create<SimStore>((set) => ({
   shooterStartY: 0,
 
   appMode: 'tactical',
+  rwrAudioMuted: false,
   comparisonEntries: [],
   comparisonNextId: 1,
 
@@ -219,4 +224,5 @@ export const useSimStore = create<SimStore>((set) => ({
   removeComparisonEntry: (id) =>
     set((s) => ({ comparisonEntries: s.comparisonEntries.filter((e) => e.id !== id) })),
   clearComparisonEntries: () => set({ comparisonEntries: [] }),
+  setRwrAudioMuted: (v) => set({ rwrAudioMuted: v }),
 }));

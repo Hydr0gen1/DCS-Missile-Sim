@@ -10,7 +10,7 @@ A DCS World-accurate missile engagement simulator built with React, TypeScript, 
 - Multi-phase thrust (boost + sustain from DCS ModelData)
 - 2D tactical display (canvas top-down, 700×700 px)
 - 3D engagement view (Three.js free-fly camera)
-- RWR / MAWS threat display (sector-accurate, gated on missile closure)
+- RWR / MAWS threat display (sector-accurate, emitter labels, threat persistence, Web Audio tones)
 - Launch envelope plot (binary-search Rmax/NEZ/Rmin at each aspect)
 - Missile editor
 - Shooter post-launch maneuver (crank/pump/drag) + datalink gate
@@ -38,8 +38,10 @@ src/
 │   ├── aircraft.ts            ← Aircraft state, maneuver logic (crank/notch/break)
 │   ├── shooterManeuver.ts     ← Shooter post-launch maneuver (crank/pump/drag) + gimbal gate
 │   └── engagement.ts          ← Main simulation loop (DT=0.05s)
+├── audio/
+│   └── rwrAudio.ts            ← Web Audio API tone synthesizer (RWR/MAWS sounds)
 ├── store/
-│   └── simStore.ts            ← Zustand global state
+│   └── simStore.ts            ← Zustand global state (incl. rwrAudioMuted)
 └── ui/
     ├── App.tsx                ← Root layout
     ├── SetupPanel.tsx         ← Scenario configuration
@@ -47,7 +49,7 @@ src/
     ├── TacticalDisplay.tsx    ← 2D canvas tactical display
     ├── TacticalDisplay3D.tsx  ← Three.js 3D view
     ├── EnvelopePlot.tsx       ← SVG launch envelope chart
-    ├── RWRDisplay.tsx         ← RWR/MAWS threat scope
+    ├── RWRDisplay.tsx         ← RWR/MAWS threat scope + audio triggers + mute toggle
     ├── MissileEditor.tsx      ← Missile data editor
     └── ComparisonPanel.tsx    ← Multi-engagement comparison table (COMPARE tab)
 tools/
@@ -214,7 +216,9 @@ python tools/dcs_data_extractor.py --datamine-path ./datamine --missile AIM_120C
 | `src/physics/guidance.ts` | `proportionalNav()`, `getPNGain()`, `clampAcceleration()` |
 | `src/physics/aircraft.ts` | Aircraft state, `stepAircraft()`, maneuver turn rates |
 | `src/physics/atmosphere.ts` | ISA: `airDensity()`, `speedOfSound()` |
-| `src/store/simStore.ts` | Zustand store — all scenario state |
+| `src/store/simStore.ts` | Zustand store — all scenario state (incl. `rwrAudioMuted`) |
+| `src/audio/rwrAudio.ts` | Web Audio API synthesizer for RWR/MAWS tones |
+| `src/ui/RWRDisplay.tsx` | RWR scope + MAWS ring + audio triggers + mute toggle |
 | `src/ui/EnvelopePlot.tsx` | Binary-search Rmax/NEZ plot, fixed `bestHitNm = loNm` |
 | `tools/dcs_data_extractor.py` | Main extraction pipeline |
 | `tools/lua_parser.py` | Lua table parser using slpp |
@@ -339,7 +343,65 @@ Minimum altitude floor: 500 ft AGL (increased from 200 ft to prevent unrealistic
 - `SimFrame.countermeasures[]` snapshots live CMObjects each tick
 - Rendered: yellow squares (flares) / cyan squares (chaff) in 2D canvas and 3D Three.js
 
-### 10. Comparison Table (ComparisonPanel.tsx, simStore.ComparisonEntry)
+### 10. RWR/MAWS Advanced Features (engagement.ts, RWRDisplay.tsx, rwrAudio.ts)
+
+**Emitter label scheme**:
+- Pre-pitbull: shooter's `AircraftData.rwrSymbol` is shown (e.g. "16" for F-16, "27" for Su-27)
+- Post-pitbull (ARH active): missile's `MissileData.rwrSymbol` is shown (e.g. "120" for AIM-120)
+- All contacts use the missile label "M" if `rwrSymbol` is absent
+
+**Emitter IDs** (unique key for persistence tracking):
+- `"shooter-fcr"` — shooter fire-control radar (SARH illumination, ARH pre-pitbull)
+- `"missile-N-seeker"` — per-missile entry once ARH seeker goes active (N = salvo index)
+
+**Threat persistence** (`persistRWR()` in engagement.ts):
+- `Map<string, RWRThreat>` keyed by `emitterId`
+- Active threats refreshed each tick (`lastSeenTime = time`)
+- Absent threats fade over `FADE_S = 6 s`; `intensity` scales linearly to 0, then entry deleted
+- Opacity in RWRDisplay driven by `t.intensity` (range 0–1)
+
+**Bearing noise** (`bearingNoise()` in engagement.ts):
+- Deterministic: hash of emitterId + 0.5 s time-bucket → stable jitter frame-to-frame
+- ±0° at ≤5 km, ±10° max at 150 km+, linear interpolation
+
+**MAWS tiers** (from `AircraftData.mawsTier`):
+- Tier 1 (AN/AAR-47 type): detects motor plume only, 6 nm range
+- Tier 2 (DAS type): persistent UV tracking even during coast, 3 nm range
+- Salvo-aware: all in-flight missiles looped in `computeRWR()` for MAWS sectors
+
+**computeRWR() signature** (engagement.ts):
+```typescript
+function computeRWR(
+  target: AircraftState,
+  shooter: AircraftState,
+  missiles: Array<{ state: MissileState; done: boolean }>,
+  missileData: MissileData,
+  seekerRangeM: number,
+  hasMaws: boolean,
+  time: number,
+  shooterAircraftData?: AircraftData,
+): RWRState
+```
+
+**Web Audio** (rwrAudio.ts):
+- `initRWRAudio()` — creates `AudioContext` (call on first user interaction)
+- `playNewContact()` — new search/track contact (880 Hz beep)
+- `playSearchPing()` — periodic search mode tick (440 Hz subtle)
+- `playLockTone()` — STT lock acquired (dual rising square-wave)
+- `playLaunchWarning()` — launch detected (sawtooth warble ×4)
+- `playPitbullChirp()` — ARH goes active (600→1800 Hz sweep)
+- `playMAWSWarning()` — MAWS onset (1600 Hz sawtooth ×3)
+- All synthesis: `OscillatorNode` + `GainNode`; no audio files
+- RWRDisplay fires tones on edge transitions only (type change, new emitterId, MAWS onset)
+- Muted when `rwrAudioMuted=true` in Zustand store; toggle button in RWRDisplay
+
+**RWRDisplay visual features**:
+- Heading bug: green triangle at 12-o-clock indicating own-ship nose direction
+- Priority diamond: `<polygon>` outline around highest-severity threat contact
+- Persistence opacity: `opacity = 0.4 + t.intensity * 0.6` (fading contacts dim smoothly)
+- Mute toggle button below status bar
+
+### 11. Comparison Table (ComparisonPanel.tsx, simStore.ComparisonEntry)
 
 - `ComparisonEntry`: records missile, maneuver, range, aspect, Pk, hit, TOF, terminal Mach, miss dist, F/A-pole, verdict
 - "Add Current" button in COMPARE tab adds active `simResult` to the table

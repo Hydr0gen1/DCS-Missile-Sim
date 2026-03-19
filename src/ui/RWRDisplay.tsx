@@ -7,10 +7,19 @@
  * MAWS (all missile types, only if aircraft equipped): shows coarse 8-sector
  * warning when a missile motor is burning. No precise bearing — sectors only.
  */
+import { useEffect, useRef } from 'react';
 import { useSimStore } from '../store/simStore';
 import type { RWRThreat, MAWSSector } from '../data/types';
 import type React from 'react';
 import { T } from './theme';
+import {
+  initRWRAudio,
+  playNewContact,
+  playLockTone,
+  playLaunchWarning,
+  playPitbullChirp,
+  playMAWSWarning,
+} from '../audio/rwrAudio';
 
 const R = 70;          // scope radius px
 const CX = R + 10;     // center x
@@ -33,7 +42,19 @@ function bearing2xy(bearing: number, radius: number): [number, number] {
   ];
 }
 
+/** Priority rank for selecting the "most dangerous" threat for the diamond */
+function threatPriority(t: RWRThreat): number {
+  if (t.type === 'active') return 4;
+  if (t.type === 'launch') return 3;
+  if (t.type === 'track')  return 2;
+  return 1; // search
+}
+
 function RWRScope({ threats }: { threats: RWRThreat[] }) {
+  // Pick highest-priority threat for the diamond overlay
+  const priority = threats.reduce<RWRThreat | null>((best, t) =>
+    best === null || threatPriority(t) > threatPriority(best) ? t : best, null);
+
   return (
     <svg width={SIZE} height={SIZE} style={{ display: 'block' }}>
       {/* Background */}
@@ -48,6 +69,12 @@ function RWRScope({ threats }: { threats: RWRThreat[] }) {
       <text x={CX} y={CY + R - 2} textAnchor="middle" fill={T.textFaint} fontSize={8} fontFamily={T.fontMono}>S</text>
       <text x={CX + R - 2} y={CY + 3} textAnchor="end" fill={T.textFaint} fontSize={8} fontFamily={T.fontMono}>E</text>
       <text x={CX - R + 2} y={CY + 3} textAnchor="start" fill={T.textFaint} fontSize={8} fontFamily={T.fontMono}>W</text>
+      {/* Heading bug — green triangle at 12-o-clock (nose direction) */}
+      <polygon
+        points={`${CX},${CY - R + 3} ${CX - 4},${CY - R + 9} ${CX + 4},${CY - R + 9}`}
+        fill={T.success}
+        opacity={0.9}
+      />
       {/* Own aircraft dot */}
       <circle cx={CX} cy={CY} r={3} fill={T.success} />
       {/* Threat contacts */}
@@ -59,13 +86,26 @@ function RWRScope({ threats }: { threats: RWRThreat[] }) {
         const [dotX, dotY] = bearing2xy(t.bearing, R * 0.78);
         const [labelX, labelY] = bearing2xy(t.bearing, R * 0.94);
         const isActive = t.type === 'active' || t.type === 'launch';
+        const opacity = 0.4 + t.intensity * 0.6;
+        const isPriority = priority === t;
         return (
           <g key={i}>
-            {/* Contact dot at bearing — no strobe line */}
+            {/* Priority diamond outline around the most dangerous contact */}
+            {isPriority && (
+              <polygon
+                points={`${dotX},${dotY - 7} ${dotX + 7},${dotY} ${dotX},${dotY + 7} ${dotX - 7},${dotY}`}
+                fill="none"
+                stroke={color}
+                strokeWidth={1}
+                opacity={opacity}
+                style={isActive ? { animation: 'rwr-blink 0.6s step-start infinite' } : undefined}
+              />
+            )}
+            {/* Contact dot at bearing */}
             <circle
               cx={dotX} cy={dotY} r={isActive ? 4 : 3}
               fill={color}
-              opacity={0.6 + t.intensity * 0.4}
+              opacity={opacity}
               style={isActive ? { animation: 'rwr-blink 0.6s step-start infinite' } : undefined}
             />
             <text
@@ -73,9 +113,10 @@ function RWRScope({ threats }: { threats: RWRThreat[] }) {
               textAnchor="middle" dominantBaseline="middle"
               fill={color} fontSize={7}
               fontFamily={T.fontMono}
+              opacity={opacity}
               style={isActive ? { animation: 'rwr-blink 0.6s step-start infinite' } : undefined}
             >
-              M
+              {t.label}
             </text>
           </g>
         );
@@ -143,7 +184,7 @@ function MAWSRing({ sectors, hasMaws }: { sectors: MAWSSector[]; hasMaws: boolea
 }
 
 export default function RWRDisplay() {
-  const { simFrames, currentFrameIdx, targetHasMaws } = useSimStore();
+  const { simFrames, currentFrameIdx, targetHasMaws, isPlaying, rwrAudioMuted, setRwrAudioMuted } = useSimStore();
   const frame = simFrames[currentFrameIdx];
   const rwr = frame?.rwr;
 
@@ -153,6 +194,70 @@ export default function RWRDisplay() {
   const radarWarning  = rwr?.radarWarning  ?? false;
   const launchWarning = rwr?.launchWarning ?? false;
   const mawsWarning   = rwr?.mawsWarning   ?? false;
+
+  // Track previous RWR state for audio edge detection
+  const prevThreatsRef = useRef<RWRThreat[]>([]);
+  const prevMawsWarnRef = useRef(false);
+  const audioInitRef = useRef(false);
+
+  // Audio: init on first interaction (store muted pref, but still init ctx)
+  function ensureAudio() {
+    if (!audioInitRef.current) {
+      initRWRAudio();
+      audioInitRef.current = true;
+    }
+  }
+
+  // Audio effect: fire tones on threat state changes, only while playing
+  useEffect(() => {
+    if (!isPlaying || rwrAudioMuted) {
+      prevThreatsRef.current = radarThreats;
+      prevMawsWarnRef.current = mawsWarning;
+      return;
+    }
+
+    const prev = prevThreatsRef.current;
+    const prevIds = new Set(prev.map(t => t.emitterId));
+    const prevTypes = new Map(prev.map(t => [t.emitterId, t.type]));
+
+    for (const t of radarThreats) {
+      const wasPresent = prevIds.has(t.emitterId);
+      const prevType = prevTypes.get(t.emitterId);
+
+      if (!wasPresent) {
+        // Brand-new contact
+        ensureAudio();
+        if (t.type === 'active') {
+          playPitbullChirp();
+        } else if (t.type === 'launch') {
+          playLaunchWarning();
+        } else if (t.type === 'track') {
+          playLockTone();
+        } else {
+          playNewContact();
+        }
+      } else if (prevType !== t.type) {
+        // Threat type upgraded
+        ensureAudio();
+        if (t.type === 'active' && prevType !== 'active') {
+          playPitbullChirp();
+        } else if (t.type === 'launch' && prevType !== 'launch') {
+          playLaunchWarning();
+        } else if (t.type === 'track' && (prevType === 'search' || prevType === undefined)) {
+          playLockTone();
+        }
+      }
+    }
+
+    // MAWS onset
+    if (mawsWarning && !prevMawsWarnRef.current) {
+      ensureAudio();
+      playMAWSWarning();
+    }
+
+    prevThreatsRef.current = radarThreats;
+    prevMawsWarnRef.current = mawsWarning;
+  }, [radarThreats, mawsWarning, isPlaying, rwrAudioMuted]);
 
   return (
     <div style={styles.panel}>
@@ -187,6 +292,22 @@ export default function RWRDisplay() {
           {mawsWarning ? '● MAWS' : '○ MAWS'}
         </span>
       </div>
+
+      {/* ── Audio mute toggle ── */}
+      <button
+        style={{
+          ...styles.muteBtn,
+          color: rwrAudioMuted ? T.textFaint : T.accent,
+          borderColor: rwrAudioMuted ? T.borderDim : T.accent,
+        }}
+        onClick={() => {
+          ensureAudio();
+          setRwrAudioMuted(!rwrAudioMuted);
+        }}
+        title={rwrAudioMuted ? 'Unmute RWR audio' : 'Mute RWR audio'}
+      >
+        {rwrAudioMuted ? '🔇 AUDIO OFF' : '🔊 AUDIO ON'}
+      </button>
 
       {/* ── Legend ── */}
       <div style={styles.legend}>
@@ -235,6 +356,17 @@ const styles: Record<string, React.CSSProperties> = {
   statusItem: {
     fontSize: 9,
     letterSpacing: 1,
+  },
+  muteBtn: {
+    background: 'transparent',
+    border: '1px solid',
+    borderRadius: 2,
+    fontSize: 8,
+    letterSpacing: 0.5,
+    padding: '2px 4px',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    textAlign: 'center',
   },
   legend: {
     fontSize: 7,

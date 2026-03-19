@@ -72,6 +72,9 @@ export interface MissileData {
   /** True if this is a synthetic test round, not a real weapon */
   isSynthetic?: boolean;
 
+  /** RWR symbol shown when this missile's active ARH seeker is detected (e.g. "120", "77", "M") */
+  rwrSymbol?: string;
+
   // --- Rich DCS-fidelity fields (optional — from datamine extraction) ---
 
   /** Mach-dependent 5-coefficient drag model (DCS Cx polar) */
@@ -143,6 +146,10 @@ export interface AircraftData {
   rcs_m2?: number;
   // Shooter radar config
   radar?: RadarConfig;
+  /** DCS-accurate RWR emitter symbol shown on target's RWR scope (e.g. "16"=F-16, "27"=Su-27) */
+  rwrSymbol?: string;
+  /** MAWS capability tier: 1=UV motor plume only (AN/AAR-47), 2=persistent UV tracking (DAS) */
+  mawsTier?: number;
 }
 
 export interface RadarConfig {
@@ -197,10 +204,14 @@ export interface RWRThreat {
   /** Degrees relative to target heading (0 = nose, 90 = right, 180 = tail) */
   bearing: number;
   type: RWRThreatType;
-  /** Short missile label, e.g. "120C", "27ER", "9M" */
+  /** Emitter label: shooter's rwrSymbol pre-pitbull, missileData.rwrSymbol post-pitbull */
   label: string;
   /** 0–1, inversely proportional to range */
   intensity: number;
+  /** Sim time (s) when this threat was last seen by computeRWR — used for persistence fade */
+  lastSeenTime: number;
+  /** Unique emitter ID for persistence tracking ("shooter-fcr", "missile-0-seeker", etc.) */
+  emitterId: string;
 }
 
 /** MAWS sector index 0–7 mapped clockwise from nose
