@@ -291,16 +291,6 @@ export function runSimulation(cfg: ScenarioConfig): {
   const loftTriggerM = m.loft?.triggerRange_m ?? null;   // DCS ModelData[39]
   const loftDescentM = m.loft?.descentRange_m ?? null;   // DCS ModelData[40]
 
-  // Pre-pitch vz for lofting missiles: prevents gravity dive from fighting loft logic
-  if (loftAngle > 0 && !isGroundLaunched) {
-    const initialHorizDist = Math.hypot(targetX - shooterX, targetY - shooterY);
-    const effectiveLoftTrigger = loftTriggerM ?? maxRangeM * 0.5;
-    if (initialHorizDist > effectiveLoftTrigger) {
-      const launchPitchRad = Math.min(5 * Math.PI / 180, (loftAngle * Math.PI / 180) / 2);
-      missileState = { ...missileState, vz: shooterSpeedMs * Math.sin(launchPitchRad) };
-    }
-  }
-
   // ccm_k0: lower = more resistant to CM. null treated as 0.3 (moderate).
   const ccmK0 = m.ccm_k0 ?? 0.3;
   const hasMaws = cfg.targetHasMaws ?? false;
@@ -676,18 +666,21 @@ export function runSimulation(cfg: ScenarioConfig): {
 
     let ax: number, ay: number, az: number, limited: boolean;
     if (time < controlDelay) {
-      // Ballistic phase: fins locked. az=G cancels gravity so missile holds its launch vector.
-      // Real missiles are aerodynamically stable on their velocity vector during this phase.
-      ax = 0; ay = 0; az = G; limited = false;
+      // Ballistic phase: fins locked — no PN commands.
+      ax = 0; ay = 0; az = 0; limited = false;
     } else if (sarhDatalinkLost) {
-      // Pure SARH without IOG: illuminator lost → fly ballistic (gravity-compensated)
-      ax = 0; ay = 0; az = G; limited = false;
+      // Pure SARH without IOG: illuminator lost → no PN commands.
+      ax = 0; ay = 0; az = 0; limited = false;
     } else {
       ({ ax, ay, az, limited } = clampAcceleration(guidOut.ax, guidOut.ay, guidOut.az, gLimit, missileState.speedMs));
       if (limited && !seduced) {
         missReason = 'insufficient maneuverability';
       }
     }
+    // Gravity bias: autopilot always cancels gravity in the vertical channel.
+    // Combined with the -G in the integrator, net vertical force is zero at baseline.
+    // PN then provides corrections relative to this level-flight reference.
+    az += G;
     // Track peak lateral G-load from guidance commands
     const gLoad = Math.sqrt(ax * ax + ay * ay + az * az) / G;
     if (gLoad > peakGLoad) peakGLoad = gLoad;
@@ -933,10 +926,11 @@ export function runSimulation(cfg: ScenarioConfig): {
 
         let sAx: number, sAy: number, sAz: number;
         if (sFlight < controlDelay) {
-          sAx = 0; sAy = 0; sAz = G; // gravity compensation, same as primary missile
+          sAx = 0; sAy = 0; sAz = 0; // no PN during fins-locked phase
         } else {
           ({ ax: sAx, ay: sAy, az: sAz } = clampAcceleration(sGuidOut.ax, sGuidOut.ay, sGuidOut.az, gLimit, slot.state.speedMs));
         }
+        sAz += G; // gravity bias: universal gravity compensation for all phases
 
         const sSpeed3D = Math.sqrt(slot.state.vx ** 2 + slot.state.vy ** 2 + slot.state.vz ** 2);
         const sMach = sSpeed3D / speedOfSound(slot.state.altFt);

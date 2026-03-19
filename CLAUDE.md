@@ -283,11 +283,23 @@ Without CPA, a Mach 4 missile (68 m/step at DT=0.05s) would miss a 8m target eve
 
 Some missiles fly ballistically after launch before guidance activates (fins locked). Read from `guidance.controlDelay_s` or `guidance.autopilot.delay_s` (DCS ModelData[38]). Capped at **2.0 s** to prevent unrealistic ballistic arcs.
 
-During `time < controlDelay`, `ax = 0; ay = 0; az = G` — setting `az = G` cancels gravity in the integrator `(az - G) = 0`, so the missile holds its launch vector rather than diving. This models real aerodynamic stability during the fin-lock phase.
+During `time < controlDelay`, `ax = 0; ay = 0; az = 0` — no PN commands. The universal gravity bias (see Gravity Bias below) still applies, so the missile holds its launch vector rather than diving.
 
-Lofting air-launched missiles also receive a small initial `vz = shooterSpeed × sin(loftAngle/2)` to pre-pitch them into the loft trajectory, preventing the loft logic from fighting an initially diving missile.
+### 6. Gravity Bias
 
-### 6. Elevation Guidance (3D Homing)
+Every missile autopilot adds a constant `+G` to the vertical channel immediately after the PN and control-delay block:
+
+```typescript
+az += G;  // universal — applies in all phases including control delay and SARH-loss
+```
+
+In the integrator: `newVz = vz + (az + G + thrustZ + dragZ − G) × DT`. The `+G` (bias) and `−G` (gravity) cancel, so the net vertical force at baseline is zero — the missile holds altitude without any PN command. PN then provides corrections relative to level flight.
+
+**Why this is necessary:** At long range (30+ km), a 1 m altitude error at 30 km produces a LOS rate of only ~33 µrad/s. With N=4 and Vc=800 m/s, the PN vertical correction is ≈0.1 m/s² — far less than gravity (9.8 m/s²). Without the bias, gravity always wins and missiles slowly sink.
+
+**Control delay and SARH-loss:** These phases set `az = 0` (no PN), and the `az += G` still applies. Net result: gravity-compensated ballistic flight.
+
+### 7. Elevation Guidance (3D Homing)
 
 Air-launched missiles actively steer toward target altitude in all phases:
 - During boost (loftAngle > 0): pitch up at specified loft angle
@@ -297,7 +309,7 @@ Ground-launched SAMs:
 - First 20% of burn time: steep 60° climb (vertical launch profile)
 - After: altitude-guided toward target
 
-### 6. Aircraft Maneuver Turn Rates
+### 8. Aircraft Maneuver Turn Rates
 
 | Maneuver | G Load | Behavior |
 |----------|--------|----------|
@@ -308,7 +320,7 @@ Ground-launched SAMs:
 
 Minimum altitude floor: 500 ft AGL (increased from 200 ft to prevent unrealistic terrain-skimming)
 
-### 7. Shooter Post-Launch Maneuvers (shooterManeuver.ts)
+### 9. Shooter Post-Launch Maneuvers (shooterManeuver.ts)
 
 | Type | Behavior |
 |------|---------|
@@ -324,9 +336,9 @@ Minimum altitude floor: 500 ft AGL (increased from 200 ft to prevent unrealistic
 - `hasIOG=true` (AIM-7M, R-27ER): dead-reckon mid-course if illuminator lost, resume when restored
 - `hasIOG=false` (AIM-7E): go ballistic immediately when datalink lost, resume guidance when restored
 
-**SARH datalink implementation**: tracked via a separate `sarhDatalinkLost` flag in `engagement.ts`. This is independent of the `seduced` CM flag. When `sarhDatalinkLost=true`, guidance commands are replaced with `ax=0, ay=0, az=G` (gravity-compensated ballistic). The flag updates each tick from `datalinkActive`, so guidance resumes automatically when datalink is restored.
+**SARH datalink implementation**: tracked via a separate `sarhDatalinkLost` flag in `engagement.ts`. This is independent of the `seduced` CM flag. When `sarhDatalinkLost=true`, guidance commands are `ax=0, ay=0, az=0` (no PN); the universal gravity bias keeps the missile flying level ballistically. The flag updates each tick from `datalinkActive`, so guidance resumes automatically when datalink is restored.
 
-### 8. Salvo Mode (ScenarioConfig.salvoCount / salvoInterval_s)
+### 10. Salvo Mode (ScenarioConfig.salvoCount / salvoInterval_s)
 
 - `salvoCount` 1–4 missiles per engagement (default 1)
 - `salvoInterval_s` time between launches (default 2s)
@@ -335,7 +347,7 @@ Minimum altitude floor: 500 ft AGL (increased from 200 ft to prevent unrealistic
 - Secondary missiles share target state with lead but have independent kinematics/seekers
 - CM dispensing is gated on lead missile only (target defends against closest threat)
 
-### 9. CM Visual Objects (types.ts → CMObject, engagement.ts → activeCMObjects)
+### 11. CM Visual Objects (types.ts → CMObject, engagement.ts → activeCMObjects)
 
 - `CMObject`: `{id, type, x, y, altFt, vx, vy, vzMs, lifetime, maxLifetime, opacity}`
 - Flares: deployed at 30% aircraft velocity, fall at 15 m/s, 3s lifetime
@@ -343,7 +355,7 @@ Minimum altitude floor: 500 ft AGL (increased from 200 ft to prevent unrealistic
 - `SimFrame.countermeasures[]` snapshots live CMObjects each tick
 - Rendered: yellow squares (flares) / cyan squares (chaff) in 2D canvas and 3D Three.js
 
-### 10. RWR/MAWS Advanced Features (engagement.ts, RWRDisplay.tsx, rwrAudio.ts)
+### 12. RWR/MAWS Advanced Features (engagement.ts, RWRDisplay.tsx, rwrAudio.ts)
 
 **Emitter label scheme**:
 - Pre-pitbull: shooter's `AircraftData.rwrSymbol` is shown (e.g. "16" for F-16, "27" for Su-27)
@@ -401,7 +413,7 @@ function computeRWR(
 - Persistence opacity: `opacity = 0.4 + t.intensity * 0.6` (fading contacts dim smoothly)
 - Mute toggle button below status bar
 
-### 11. Comparison Table (ComparisonPanel.tsx, simStore.ComparisonEntry)
+### 13. Comparison Table (ComparisonPanel.tsx, simStore.ComparisonEntry)
 
 - `ComparisonEntry`: records missile, maneuver, range, aspect, Pk, hit, TOF, terminal Mach, miss dist, F/A-pole, verdict
 - "Add Current" button in COMPARE tab adds active `simResult` to the table
@@ -435,7 +447,7 @@ R     = (tx−mx, ty−my, tz−mz)          3D relative position
 V_rel = (tvx−mvx, tvy−mvy, tvz−mvz)    3D relative velocity
 Vc    = −(R̂ · V_rel)                   closing velocity
 Ω     = (R × V_rel) / |R|²             LOS angular velocity vector
-a_cmd = N · Vc · (V̂_missile × Ω)       PN acceleration ⊥ to velocity
+a_cmd = -N · Vc · (V̂_missile × Ω)      PN acceleration ⊥ to velocity (negative sign essential)
 ```
 All three components `(ax, ay, az)` are produced by `proportionalNav()` and clamped as a 3D vector to `gLimit × G`.
 

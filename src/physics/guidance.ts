@@ -1,15 +1,15 @@
 /**
  * Proportional Navigation guidance — true 3D formulation.
  *
- * a_cmd = N · Vc · (V̂_missile × Ω)
+ * a_cmd = -N · Vc · (V̂_missile × Ω)     ← NOTE NEGATIVE SIGN
  *
  * where:
- *   Vc  = closing velocity  = −(R̂ · V_rel)
+ *   Vc  = closing velocity  = −(R̂ · V_rel)   (positive when closing)
  *   Ω   = LOS angular velocity = (R × V_rel) / |R|²
  *   V̂   = missile velocity unit vector
  *
- * The cross product V̂ × Ω yields an acceleration vector perpendicular
- * to the missile velocity that zeroes out the LOS rotation rate.
+ * The negative sign ensures the missile steers TOWARD the LOS rotation
+ * (i.e., toward the intercept point), not away from it.
  */
 import type { PNEntry } from '../data/types';
 
@@ -104,8 +104,9 @@ export function proportionalNav(input: GuidanceInput): GuidanceOutput {
   const vhy = mvy / speed3D;
   const vhz = mvz / speed3D;
 
-  // a_cmd = N · Vc · (V̂ × Ω)
-  const scale = navConst * closingVelocity;
+  // a_cmd = -N · Vc · (V̂ × Ω)
+  // Negative sign: without it steering is inverted (missile flies away from target)
+  const scale = -navConst * closingVelocity;
   const ax = scale * (vhy * oz - vhz * oy);
   const ay = scale * (vhz * ox - vhx * oz);
   const az = scale * (vhx * oy - vhy * ox);
