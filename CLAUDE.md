@@ -229,12 +229,15 @@ python tools/dcs_data_extractor.py --datamine-path ./datamine --missile AIM_120C
 ```typescript
 // In missile.ts: getCxDCS(mach, cx)
 Cx(M) = {
-  M < 0.8:  k0                              (subsonic)
-  0.8–1.2:  k0 + k1·exp(-k2·(M-1)²)       (transonic wave crisis)
-  M > 1.2:  (k0+k3) + k1·exp(-k2·(M-1)²)·exp(-k4·(M-1.2))  (supersonic)
+  M < 0.8:  k0                                                           (subsonic)
+  0.8–1.2:  k0 + k1·exp(-k2·(M-1)²)                                    (transonic wave crisis)
+  M > 1.2:  max(k0+k3, k0*0.5) + k1·exp(-k2·(M-1)²)·exp(-k4·(M-1.2)) (supersonic)
+            final floor: max(k0*0.3, ...)
 }
 F_drag = ½ ρ v² · Cx(M) · A_ref
 ```
+
+**Supersonic baseline clamping**: For 26 missiles (AIM-120C, AIM-54, R-27ER, MICA, SM-series etc.) `k3` is large and negative, making the naive `k0+k3` negative. The physical floor `max(k0+k3, k0*0.5)` ensures supersonic Cx never drops below 50% of subsonic — all missile bodies retain significant friction/base drag at supersonic speeds. A final clamp at `k0*0.3` prevents any edge-case near-zero.
 
 Note: `reference_area_m2` in DCS is NOT the physical cross-section (≈0.025 m² for a 0.178m diameter missile). DCS uses A_ref ≈ 0.4 m² for AIM-120C — this is the aerodynamic reference area, consistent with the Cx values.
 
@@ -274,7 +277,11 @@ Without CPA, a Mach 4 missile (68 m/step at DT=0.05s) would miss a 8m target eve
 
 ### 5. Guidance Control Delay
 
-Some missiles fly ballistically after launch before guidance activates (fins locked). Read from `guidance.controlDelay_s` or `guidance.autopilot.delay_s` (DCS ModelData[38]). During `time < controlDelay`, `ax = ay = az = 0`; thrust still applies along velocity. This reduces effectiveness at very short ranges and off-boresight shots.
+Some missiles fly ballistically after launch before guidance activates (fins locked). Read from `guidance.controlDelay_s` or `guidance.autopilot.delay_s` (DCS ModelData[38]). Capped at **2.0 s** to prevent unrealistic ballistic arcs.
+
+During `time < controlDelay`, `ax = 0; ay = 0; az = G` — setting `az = G` cancels gravity in the integrator `(az - G) = 0`, so the missile holds its launch vector rather than diving. This models real aerodynamic stability during the fin-lock phase.
+
+Lofting air-launched missiles also receive a small initial `vz = shooterSpeed × sin(loftAngle/2)` to pre-pitch them into the loft trajectory, preventing the loft logic from fighting an initially diving missile.
 
 ### 6. Elevation Guidance (3D Homing)
 
@@ -311,7 +318,9 @@ Minimum altitude floor: 500 ft AGL (increased from 200 ft to prevent unrealistic
 
 **SARH IOG tiers** (controlled by `MissileData.hasIOG`):
 - `hasIOG=true` (AIM-7M, R-27ER): dead-reckon mid-course if illuminator lost, resume when restored
-- `hasIOG=false` (AIM-7E): go ballistic immediately when datalink lost
+- `hasIOG=false` (AIM-7E): go ballistic immediately when datalink lost, resume guidance when restored
+
+**SARH datalink implementation**: tracked via a separate `sarhDatalinkLost` flag in `engagement.ts`. This is independent of the `seduced` CM flag. When `sarhDatalinkLost=true`, guidance commands are replaced with `ax=0, ay=0, az=G` (gravity-compensated ballistic). The flag updates each tick from `datalinkActive`, so guidance resumes automatically when datalink is restored.
 
 ### 8. Salvo Mode (ScenarioConfig.salvoCount / salvoInterval_s)
 
@@ -368,7 +377,7 @@ a_cmd = N · Vc · (V̂_missile × Ω)       PN acceleration ⊥ to velocity
 ```
 All three components `(ax, ay, az)` are produced by `proportionalNav()` and clamped as a 3D vector to `gLimit × G`.
 
-**Loft / SAM steep launch** — handled via virtual target altitude instead of thrust tilting:
+**Loft / SAM steep launch** — handled via `computeLoftAltitude()` helper in `engagement.ts`. Returns the virtual guidance altitude for both primary and secondary salvo missiles (Fix 4 — secondaries previously got no loft).
 - Loft phase: `tz_guide = targetAlt + sin(loftAngle) * horizDist` → PN naturally pitches up.
   - Loft is **range-gated**, not burn-time-gated: DCS `loft.triggerRange_m` / `loft.descentRange_m` used when available; falls back to 50%/25% of Rmax.
   - Between trigger and descent range: linear blend from full loft altitude down to target altitude.
@@ -404,6 +413,29 @@ All three components `(ax, ay, az)` are produced by `proportionalNav()` and clam
 5. **DataMine patch tracking**: DCS patches change ModelData values (thrust, Cx, DLZ). Run `--update --diff` after each DCS patch to catch changes.
 
 6. ~~**True 3D ProNav**~~: Resolved — guidance upgraded to full 3D PN with LOS angular velocity vector `Ω = (R×V_rel)/|R|²` producing `(ax, ay, az)` guidance commands. Loft and SAM steep-launch handled via virtual target altitude offsets.
+
+---
+
+### Pk and Verdict
+
+`computePk()` in `engagement.ts` maps hit/miss conditions to a 0–1 probability:
+- Hit + terminal speed > 200 m/s → Pk 0.71–0.95 (reduced by target maneuver)
+- Hit + terminal speed ≤ 200 m/s → Pk 0.30
+
+`buildVerdict()` maps Pk to a display string:
+| Pk range | Verdict |
+|----------|---------|
+| ≥ 0.85 | Kill |
+| ≥ 0.65 | Probable Kill |
+| ≥ 0.35 | Marginal |
+| < 0.35 AND hit=true | Kill — low terminal energy |
+| hit=false | Miss — [reason] |
+
+**Important**: a geometric hit (CPA < 8m) always produces a "Kill" family verdict, never "Miss". The Pk=0.30 low-speed hit case is labeled "Kill — low terminal energy" (warhead detonated in lethal radius, just low-energy).
+
+### Atmosphere consistency
+
+All density computations use `airDensity(altFt)` from `atmosphere.ts` (two-layer ISA model). `shooterManeuver.ts` previously used a single-exponential approximation; it now uses the same ISA model. The ISA model diverges from the single-exponential by 3–5% at typical BVR altitudes.
 
 ---
 

@@ -73,7 +73,7 @@ export default function ResultsPanel() {
             </span>
           } />
           <Row label="TOF" value={`${simResult.timeOfFlight.toFixed(1)} s`} />
-          <Row label="TERM SPD" value={`M${(simResult.terminalSpeedMs / 340).toFixed(2)}`} />
+          <Row label="TERM SPD" value={`M${simResult.terminalSpeedMach.toFixed(2)}`} />
           {!simResult.hit && (
             <Row label="MISS DIST" value={`${simResult.missDistance.toFixed(0)} m`} />
           )}

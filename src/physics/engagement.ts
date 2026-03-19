@@ -165,6 +165,41 @@ export function validateScenario(cfg: ScenarioConfig): string | null {
   return null;
 }
 
+/**
+ * Compute virtual guidance altitude for loft / SAM steep-launch / terminal phases.
+ * Shared by both primary and secondary salvo missiles.
+ */
+function computeLoftAltitude(
+  mzM: number,
+  tzActual: number,
+  horizDist: number,
+  loftAngle: number,
+  effectiveTriggerM: number,
+  effectiveDescentM: number,
+  isSeduced: boolean,
+  isGroundLaunched: boolean,
+  isBurning: boolean,
+  burnTimeFrac: number,
+): number {
+  if (isGroundLaunched) {
+    const altErrLoft = tzActual - mzM;
+    if (isBurning && burnTimeFrac < 0.2 && altErrLoft > 0) {
+      return mzM + 6000;
+    }
+    return isSeduced ? mzM : tzActual;
+  }
+  // Air-launched loft (range-gated)
+  const loftSin = Math.sin((loftAngle * Math.PI) / 180);
+  if (loftAngle > 0 && horizDist > effectiveDescentM) {
+    if (horizDist >= effectiveTriggerM) {
+      return tzActual + loftSin * horizDist;
+    }
+    const blend = (horizDist - effectiveDescentM) / Math.max(1, effectiveTriggerM - effectiveDescentM);
+    return tzActual + loftSin * horizDist * blend;
+  }
+  return isSeduced ? mzM : tzActual;
+}
+
 /** Run full engagement simulation, returns all frames */
 export function runSimulation(cfg: ScenarioConfig): {
   frames: SimFrame[];
@@ -255,12 +290,23 @@ export function runSimulation(cfg: ScenarioConfig): {
   const loftAngle = m.loft?.elevationDeg ?? m.loftAngle_deg ?? 0;
   const loftTriggerM = m.loft?.triggerRange_m ?? null;   // DCS ModelData[39]
   const loftDescentM = m.loft?.descentRange_m ?? null;   // DCS ModelData[40]
+
+  // Pre-pitch vz for lofting missiles: prevents gravity dive from fighting loft logic
+  if (loftAngle > 0 && !isGroundLaunched) {
+    const initialHorizDist = Math.hypot(targetX - shooterX, targetY - shooterY);
+    const effectiveLoftTrigger = loftTriggerM ?? maxRangeM * 0.5;
+    if (initialHorizDist > effectiveLoftTrigger) {
+      const launchPitchRad = Math.min(5 * Math.PI / 180, (loftAngle * Math.PI / 180) / 2);
+      missileState = { ...missileState, vz: shooterSpeedMs * Math.sin(launchPitchRad) };
+    }
+  }
+
   // ccm_k0: lower = more resistant to CM. null treated as 0.3 (moderate).
   const ccmK0 = m.ccm_k0 ?? 0.3;
   const hasMaws = cfg.targetHasMaws ?? false;
   const reactOnDetect = cfg.targetReactOnDetect ?? false;
   // DCS ModelData[38]: fins-locked ballistic phase after launch before guidance activates
-  const controlDelay = m.guidance?.controlDelay_s ?? m.guidance?.autopilot?.delay_s ?? 0;
+  const controlDelay = Math.min(m.guidance?.controlDelay_s ?? m.guidance?.autopilot?.delay_s ?? 0, 2.0);
 
   // MAWS can detect motor plumes within ~6nm (11112m). Real AN/AAR-56/57 spec.
   const MAWS_DETECT_RANGE_M = 11112;
@@ -334,6 +380,8 @@ export function runSimulation(cfg: ScenarioConfig): {
   let datalinkWasLost = false;
   // IOG: ARH always has inertial mid-course; SARH depends on hasIOG field
   const hasIOG = m.hasIOG ?? (m.type === 'ARH');
+  // Separate flag for SARH datalink-loss ballistic state (avoids overloading the CM seduced flag)
+  let sarhDatalinkLost = false;
 
   // CM objects in flight (for visual rendering)
   let activeCMObjects: CMObject[] = [];
@@ -593,34 +641,14 @@ export function runSimulation(cfg: ScenarioConfig): {
     // ── Virtual target altitude: loft / SAM steep launch / terminal ──────────
     const mzM = missileState.altFt * FT_TO_M;
     const tzActual = newTarget.altFt * FT_TO_M;
-    const altErrLoft = tzActual - mzM;
     const horizDistE = Math.hypot(guidanceTargetX - missileState.x, guidanceTargetY - missileState.y);
-    let tzGuide: number;
-    if (isGroundLaunched) {
-      // SAM steep launch: guide toward a point 6 km above current altitude for the first 20% of burn
-      if (burning && time < burnTime * 0.2 && altErrLoft > 0) {
-        tzGuide = mzM + 6000;
-      } else {
-        tzGuide = seduced ? mzM : tzActual;
-      }
-    } else {
-      // Air-launched: loft using DCS trigger/descent ranges (range-gated, not burn-gated)
-      const loftSin = Math.sin((loftAngle * Math.PI) / 180);
-      const effectiveTriggerM = loftTriggerM ?? maxRangeM * 0.5;
-      const effectiveDescentM = loftDescentM ?? maxRangeM * 0.25;
-      if (loftAngle > 0 && horizDistE > effectiveDescentM) {
-        if (horizDistE >= effectiveTriggerM) {
-          // Full climbing phase
-          tzGuide = tzActual + loftSin * horizDistE;
-        } else {
-          // Descending transition between trigger and descent range
-          const blend = (horizDistE - effectiveDescentM) / Math.max(1, effectiveTriggerM - effectiveDescentM);
-          tzGuide = tzActual + loftSin * horizDistE * blend;
-        }
-      } else {
-        tzGuide = seduced ? mzM : tzActual;
-      }
-    }
+    const effectiveTriggerM = loftTriggerM ?? maxRangeM * 0.5;
+    const effectiveDescentM = loftDescentM ?? maxRangeM * 0.25;
+    const tzGuide = computeLoftAltitude(
+      mzM, tzActual, horizDistE,
+      loftAngle, effectiveTriggerM, effectiveDescentM,
+      seduced, isGroundLaunched, burning, burnTime > 0 ? time / burnTime : 1,
+    );
 
     // ── Proportional nav — 3D; PN gain on actual 3D range to real target ─────
     const range3DActual = Math.sqrt(
@@ -645,8 +673,12 @@ export function runSimulation(cfg: ScenarioConfig): {
 
     let ax: number, ay: number, az: number, limited: boolean;
     if (time < controlDelay) {
-      // Ballistic phase: fins locked, no guidance
-      ax = 0; ay = 0; az = 0; limited = false;
+      // Ballistic phase: fins locked. az=G cancels gravity so missile holds its launch vector.
+      // Real missiles are aerodynamically stable on their velocity vector during this phase.
+      ax = 0; ay = 0; az = G; limited = false;
+    } else if (sarhDatalinkLost) {
+      // Pure SARH without IOG: illuminator lost → fly ballistic (gravity-compensated)
+      ax = 0; ay = 0; az = G; limited = false;
     } else {
       ({ ax, ay, az, limited } = clampAcceleration(guidOut.ax, guidOut.ay, guidOut.az, gLimit, missileState.speedMs));
       if (limited && !seduced) {
@@ -803,15 +835,10 @@ export function runSimulation(cfg: ScenarioConfig): {
 
     // Apply datalink loss to guidance for next tick:
     // - ARH with IOG: continues on last known target position (already handled by lastKnownTargetX/Y)
-    // - SARH pure (no IOG): ax=ay=az=0 next tick (set via seduced flag as approximation)
+    // - SARH pure (no IOG): goes ballistic when illuminator lost, resumes when restored
     // - SARH with IOG: dead-reckon mid-course (same as ARH with IOG)
-    if (!datalinkActive && m.type === 'SARH' && !hasIOG) {
-      // Pure SARH without IOG goes ballistic when illuminator is lost
-      seduced = true;
-      seductionEndTime = time + 9999; // stays ballistic until datalink restored
-    } else if (newDatalinkActive && m.type === 'SARH' && !hasIOG && seduced && datalinkWasLost) {
-      // Datalink restored — resume guidance
-      seduced = false;
+    if (m.type === 'SARH' && !hasIOG) {
+      sarhDatalinkLost = !datalinkActive;
     }
 
     // --- Per-frame WEZ update (every 10 frames) ---
@@ -880,11 +907,17 @@ export function runSimulation(cfg: ScenarioConfig): {
         const sTz = newTarget.altFt * FT_TO_M;
         const sGuidX = slot.seduced ? slot.lastKnownX : newTarget.x;
         const sGuidY = slot.seduced ? slot.lastKnownY : newTarget.y;
+        const sHorizDist = Math.hypot(sGuidX - slot.state.x, sGuidY - slot.state.y);
+        const sTzGuide = computeLoftAltitude(
+          sMz, sTz, sHorizDist,
+          loftAngle, effectiveTriggerM, effectiveDescentM,
+          slot.seduced, isGroundLaunched, sFlight < burnTime, burnTime > 0 ? sFlight / burnTime : 1,
+        );
 
         const sGuidOut = proportionalNav({
           mx: slot.state.x, my: slot.state.y, mz: sMz,
           mvx: slot.state.vx, mvy: slot.state.vy, mvz: slot.state.vz,
-          tx: sGuidX, ty: sGuidY, tz: slot.seduced ? sMz : sTz,
+          tx: sGuidX, ty: sGuidY, tz: sTzGuide,
           tvx: slot.seduced ? 0 : newTarget.vx,
           tvy: slot.seduced ? 0 : newTarget.vy,
           tvz: slot.seduced ? 0 : (newTarget.vzMs ?? 0),
@@ -893,7 +926,7 @@ export function runSimulation(cfg: ScenarioConfig): {
 
         let sAx: number, sAy: number, sAz: number;
         if (sFlight < controlDelay) {
-          sAx = 0; sAy = 0; sAz = 0;
+          sAx = 0; sAy = 0; sAz = G; // gravity compensation, same as primary missile
         } else {
           ({ ax: sAx, ay: sAy, az: sAz } = clampAcceleration(sGuidOut.ax, sGuidOut.ay, sGuidOut.az, gLimit, slot.state.speedMs));
         }
@@ -1189,5 +1222,5 @@ function buildVerdict(pk: number, hit: boolean, missReason: string): string {
   if (pk >= 0.85) return 'Kill';
   if (pk >= 0.65) return 'Probable Kill';
   if (pk >= 0.35) return 'Marginal';
-  return 'Miss — insufficient terminal energy';
+  return 'Kill — low terminal energy';
 }
