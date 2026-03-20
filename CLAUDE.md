@@ -212,7 +212,7 @@ python tools/dcs_data_extractor.py --datamine-path ./datamine --missile AIM_120C
 | `src/data/missiles.json` | 96 A2A/SAM missiles extracted from DCS datamine |
 | `src/data/types.ts` | TypeScript interfaces — `MissileData`, `CxCoeffs`, `ThrustPhase`, `PNEntry`, `DLZ` |
 | `src/physics/engagement.ts` | Main simulation loop, segment-vs-segment CPA (12m kill radius) |
-| `src/physics/missile.ts` | `getCxDCS()`, `getThrustAndMass()`, `dragForce()` |
+| `src/physics/missile.ts` | `getCxDCS()`, `getThrustAndMass()`, `dragForce()`, `fillMissingFields()` |
 | `src/physics/guidance.ts` | `proportionalNav()`, `getPNGain()`, `clampAcceleration()` |
 | `src/physics/aircraft.ts` | Aircraft state, `stepAircraft()`, maneuver turn rates |
 | `src/physics/atmosphere.ts` | ISA: `airDensity()`, `speedOfSound()` |
@@ -371,6 +371,7 @@ Minimum altitude floor: 500 ft AGL (increased from 200 ft to prevent unrealistic
 **Emitter IDs** (unique key for persistence tracking):
 - `"shooter-fcr"` — shooter fire-control radar (SARH illumination, ARH pre-pitbull)
 - `"missile-N-seeker"` — per-missile entry once ARH seeker goes active (N = salvo index)
+- `"maws-N"` — per-missile MAWS passive IR detection entry (N = salvo index); type `'maws'`
 
 **Threat persistence** (`persistRWR()` in engagement.ts):
 - `Map<string, RWRThreat>` keyed by `emitterId`
@@ -386,6 +387,7 @@ Minimum altitude floor: 500 ft AGL (increased from 200 ft to prevent unrealistic
 - Tier 1 (AN/AAR-47 type): detects motor plume only, 6 nm range
 - Tier 2 (DAS type): persistent UV tracking even during coast, 3 nm range
 - Salvo-aware: all in-flight missiles looped in `computeRWR()` for MAWS sectors
+- MAWS-detected missiles also appear on the RWR scope as orange `'maws'`-type contacts labeled "M" — lowest priority, no RWR audio
 
 **computeRWR() signature** (engagement.ts):
 ```typescript
@@ -470,6 +472,12 @@ All three components `(ax, ay, az)` are produced by `proportionalNav()` and clam
 - Terminal phase: `tz_guide = actualTargetAlt`.
 
 **Thrust along velocity**: motor thrust acts along `V̂_missile` (the instantaneous velocity unit vector), not a manually pitched elevCmd. No energy is "wasted" pitching the motor away from the flight path.
+
+**SAM pre-launch lock period** (`ScenarioConfig.lockTime_s`, default 4 s for ground mode):
+- Target flies straight for `lockTime_s` seconds before the missile launches (simulates SAM radar acquisition)
+- After the lock period, the missile is re-aimed at the target's new position
+- Configurable via slider in SetupPanel (ground mode only, range 0–12 s)
+- `fillMissingFields()` in `missile.ts` estimates null flat physics fields from DCS rich data (propulsion phases → `thrust_N`, Cx k0 → `dragCoefficient`, etc.) so SAMs with full DCS propulsion data always pass validation
 
 ### Side Profile View
 

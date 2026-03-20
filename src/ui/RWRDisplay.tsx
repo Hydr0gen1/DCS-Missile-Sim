@@ -33,6 +33,7 @@ const THREAT_COLORS: Record<string, string> = {
   track:   T.typeSARH,
   launch:  T.danger,
   active:  T.danger,
+  maws:    T.accent,   // orange — MAWS passive IR detection
 };
 
 function bearing2xy(bearing: number, radius: number): [number, number] {
@@ -49,7 +50,8 @@ function threatPriority(t: RWRThreat): number {
   if (t.type === 'active') return 4;
   if (t.type === 'launch') return 3;
   if (t.type === 'track')  return 2;
-  return 1; // search
+  if (t.type === 'search') return 1;
+  return 0; // maws = lowest priority (passive IR, not a radar spike)
 }
 
 function RWRScope({ threats }: { threats: RWRThreat[] }) {
@@ -274,6 +276,7 @@ export default function RWRDisplay() {
     const prevTypes = new Map(prev.map(t => [t.emitterId, t.type]));
 
     for (const t of radarThreats) {
+      if (t.type === 'maws') continue; // MAWS passive detections don't trigger RWR audio
       if (!prevIds.has(t.emitterId)) {
         // Brand-new contact
         ensureAudio();
@@ -345,10 +348,11 @@ export default function RWRDisplay() {
       <div style={styles.legend}>
         <span style={{ color: T.textDim }}>■</span> SEARCH&nbsp;
         <span style={{ color: T.typeSARH }}>■</span> TRACK&nbsp;
-        <span style={{ color: T.danger }}>■</span> ACT/LCH
+        <span style={{ color: T.danger }}>■</span> ACT/LCH&nbsp;
+        <span style={{ color: T.accent }}>■</span> MAWS
       </div>
       <div style={{ ...styles.legend, color: T.textFaint, marginTop: 1 }}>
-        IR = RWR SILENT · ARH ACTIVE = spike
+        IR = RWR SILENT · MAWS = passive IR
       </div>
     </div>
   );

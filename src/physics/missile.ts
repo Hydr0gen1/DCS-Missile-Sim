@@ -35,6 +35,55 @@ export function getMissingFields(m: MissileData): string[] {
 }
 
 /**
+ * Fill null physics fields using available DCS rich data (propulsion phases, Cx coefficients).
+ * SAMs and older missiles often have rich DCS data in propulsion/aerodynamics but null flat fields.
+ * Returns a new MissileData object — never mutates the original.
+ */
+export function fillMissingFields(m: MissileData): MissileData {
+  const G_ACCEL = 9.80665;
+  const p = { ...m };
+
+  // referenceArea_m2: scale with missile mass (AIM-120C: 157 kg → 0.04 m²)
+  if (p.referenceArea_m2 == null) {
+    const kg = p.mass_kg ?? 100;
+    p.referenceArea_m2 = Math.max(0.01, 0.04 * Math.pow(kg / 157, 2 / 3));
+  }
+
+  // dragCoefficient: prefer Cx k0 from DCS aerodynamics model
+  if (p.dragCoefficient == null) {
+    const k0 = p.aerodynamics?.Cx?.k0;
+    p.dragCoefficient = (k0 != null && k0 > 0) ? k0 : 0.04;
+  }
+
+  // motorBurnTime_s: prefer propulsion totalBurnTime
+  if (p.motorBurnTime_s == null) {
+    p.motorBurnTime_s = p.propulsion?.totalBurnTime_s ?? 5.0;
+  }
+
+  // massBurnout_kg: prefer propulsion massAtBurnout, else 65% of launch mass
+  if (p.massBurnout_kg == null && p.mass_kg != null) {
+    p.massBurnout_kg = p.propulsion?.massAtBurnout_kg ?? (p.mass_kg * 0.65);
+  }
+
+  // thrust_N: prefer max phase thrust, else kinematic estimate (~5G average T/W during boost)
+  if (p.thrust_N == null && p.mass_kg != null) {
+    const phases = p.propulsion?.phases;
+    if (phases && phases.length > 0) {
+      const maxT = Math.max(...phases.map((ph) => ph.thrust_N ?? 0));
+      if (maxT > 0) p.thrust_N = maxT;
+    }
+    if (p.thrust_N == null) {
+      p.thrust_N = p.mass_kg * G_ACCEL * 5;
+    }
+  }
+
+  // guidanceNav: standard ProNav constant
+  if (p.guidanceNav == null) p.guidanceNav = 4.0;
+
+  return p;
+}
+
+/**
  * DCS 5-coefficient Mach-dependent drag model.
  * Reconstructed from DCS Lua datamine ModelData indices 3–7.
  *

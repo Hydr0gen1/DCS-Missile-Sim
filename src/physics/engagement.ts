@@ -3,7 +3,7 @@
  * dt = 0.05s
  */
 import { airDensity, speedOfSound, NM_TO_M, M_TO_NM, FT_TO_M } from './atmosphere';
-import { dragForce, getCxDCS, getThrustAndMass, createMissileState, estimateMaxRangeM, getMissingFields } from './missile';
+import { dragForce, getCxDCS, getThrustAndMass, createMissileState, estimateMaxRangeM, getMissingFields, fillMissingFields } from './missile';
 import type { MissileState } from './missile';
 import { proportionalNav, clampAcceleration, getPNGain } from './guidance';
 import { createAircraftState, stepAircraft } from './aircraft';
@@ -116,6 +116,8 @@ export interface ScenarioConfig {
   aspectAngleDeg: number;   // 0=hot, 180=cold
   // Missile
   missile: MissileData;
+  /** SAM pre-launch lock time: target flies this many seconds before missile launches (default 4s for ground, 0 for air) */
+  lockTime_s?: number;
 }
 
 export interface EngagementResult {
@@ -187,7 +189,8 @@ export interface SimState {
 
 /** Validate scenario before running */
 export function validateScenario(cfg: ScenarioConfig): string | null {
-  const missing = getMissingFields(cfg.missile);
+  const filled = fillMissingFields(cfg.missile);
+  const missing = getMissingFields(filled);
   if (missing.length > 0) {
     return `Cannot simulate ${cfg.missile.name}: missing fields: ${missing.join(', ')}`;
   }
@@ -239,7 +242,8 @@ export function runSimulation(cfg: ScenarioConfig): {
   shooterStartX: number;
   shooterStartY: number;
 } {
-  const m = cfg.missile;
+  // Fill in null physics fields from available DCS rich data (propulsion phases, Cx coefficients)
+  const m = fillMissingFields(cfg.missile);
 
   // Place shooter at origin; target at range/aspect
   const rangeM = cfg.rangeNm * NM_TO_M;
@@ -320,6 +324,19 @@ export function runSimulation(cfg: ScenarioConfig): {
     cfg.targetManeuver, false, 0,
     cfg.targetWaypoints,
   );
+
+  // ── SAM pre-launch lock period: target drifts while SAM acquires and locks ──
+  // Ground launchers use a configurable lock time (default 4 s); aircraft launch immediately.
+  const lockTime = isGroundLaunched ? (cfg.lockTime_s ?? 4.0) : 0;
+  if (lockTime > 0) {
+    for (let lt = 0; lt < lockTime; lt += DT) {
+      // Missile not yet launched — target flies straight (no maneuver, shooter pos as reference)
+      targetState = stepAircraft(targetState, DT, shooterX, shooterY, false);
+    }
+    // Re-aim missile toward the target's new position after lock
+    const aimHeadingDeg = ((Math.atan2(targetState.x - shooterX, targetState.y - shooterY) * 180) / Math.PI + 360) % 360;
+    missileState = createMissileState(shooterX, shooterY, aimHeadingDeg, shooterSpeedMs, cfg.shooterAlt);
+  }
 
   const initialDlz = computeDLZ(m, cfg.shooterAlt, cfg.shooterSpeed, cfg.targetAlt, cfg.targetSpeed, cfg.aspectAngleDeg);
   const maxRangeM = initialDlz.rmax_m;
@@ -1369,6 +1386,33 @@ function computeRWR(
       const sectorIdx = Math.round(relBearing(msl.state.x, msl.state.y) / 45) % 8;
       if (!mawsActive.some(s => s.sectorIdx === sectorIdx)) {
         mawsActive.push({ sectorIdx, active: true });
+      }
+    }
+  }
+
+  // ── MAWS contacts on RWR: IR missiles show "M" on scope when MAWS detects them ──
+  // These appear as 'maws' type — orange, lowest priority, no RWR audio.
+  if (hasMaws) {
+    for (let mi = 0; mi < missiles.length; mi++) {
+      const msl = missiles[mi];
+      if (msl.done) continue;
+      const mRangeM = Math.hypot(msl.state.x - target.x, msl.state.y - target.y);
+      const cr = mRangeM > 1
+        ? (msl.state.vx * (target.x - msl.state.x) + msl.state.vy * (target.y - msl.state.y)) / mRangeM
+        : 0;
+      if (cr <= -50) continue; // missile has passed target
+      const canDetectM = msl.state.motorBurning && mRangeM <= MAWS_RANGE_MOTOR;
+      const canDetectC = mawsTier >= 2 && !msl.state.motorBurning && mRangeM <= MAWS_RANGE_COAST;
+      if (canDetectM || canDetectC) {
+        const eid = `maws-${mi}`;
+        radarThreats.push({
+          bearing: relBearing(msl.state.x, msl.state.y),
+          type: 'maws',
+          label: 'M',
+          intensity: Math.min(1, MAWS_RANGE_MOTOR / Math.max(mRangeM, 100)),
+          lastSeenTime: time,
+          emitterId: eid,
+        });
       }
     }
   }

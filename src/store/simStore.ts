@@ -65,6 +65,8 @@ interface SimStore {
   salvoCount: number;
   /** Seconds between missile launches */
   salvoInterval_s: number;
+  /** SAM pre-launch lock time in seconds (ground mode only) */
+  lockTime_s: number;
 
   // Playback
   simFrames: SimFrame[];
@@ -146,6 +148,7 @@ export const useSimStore = create<SimStore>((set) => ({
   shooterManeuver: 'none',
   salvoCount: 1,
   salvoInterval_s: 2,
+  lockTime_s: 4.0,
 
   simFrames: [],
   currentFrameIdx: 0,
@@ -202,7 +205,7 @@ export const useSimStore = create<SimStore>((set) => ({
       simError: null,
       isPlaying: false,
     }),
-  setShooterRole: (role) => set({ shooterRole: role, ...(role === 'ground' ? { shooterSpeed: 0 } : {}) }),
+  setShooterRole: (role) => set({ shooterRole: role, ...(role === 'ground' ? { shooterSpeed: 0, shooterAlt: 0 } : {}) }),
   addMissile: (m) => set((s) => ({ missiles: [...s.missiles, m] })),
   deleteMissile: (id) =>
     set((s) => ({

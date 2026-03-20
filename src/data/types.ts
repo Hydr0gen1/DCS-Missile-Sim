@@ -175,7 +175,7 @@ export type ShooterManeuverType = 'none' | 'crank_left' | 'crank_right' | 'pump'
 /** Pre-launch radar detection event */
 export interface DetectionEvent {
   time: number;
-  type: 'search_detected' | 'stt_lock' | 'launch' | 'missile_active' | 'datalink_lost' | 'datalink_restored';
+  type: 'search_detected' | 'stt_lock' | 'launch' | 'missile_active' | 'datalink_lost' | 'datalink_restored' | 'lock';
   description: string;
 }
 
@@ -198,7 +198,7 @@ export interface CMObject {
 
 /** Radar Warning Receiver threat type.
  * RWR only detects RADAR emissions — IR missiles are silent to RWR. */
-export type RWRThreatType = 'search' | 'track' | 'launch' | 'active';
+export type RWRThreatType = 'search' | 'track' | 'launch' | 'active' | 'maws';
 
 export interface RWRThreat {
   /** Degrees relative to target heading (0 = nose, 90 = right, 180 = tail) */

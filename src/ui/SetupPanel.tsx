@@ -2,7 +2,7 @@ import { useSimStore } from '../store/simStore';
 import type { ShooterRole } from '../store/simStore';
 import type { ManeuverType } from '../physics/aircraft';
 import type { ShooterManeuverType } from '../data/types';
-import { getMissingFields } from '../physics/missile';
+import { getMissingFields, fillMissingFields } from '../physics/missile';
 import { T } from './theme';
 
 const label = (text: string, tip: string) => (
@@ -19,11 +19,14 @@ export default function SetupPanel() {
     targetManeuver, targetChaffCount, targetFlareCount, targetReactOnDetect,
     rangeNm, aspectAngleDeg, selectedMissileId,
     shooterManeuver, salvoCount, salvoInterval_s,
+    lockTime_s,
     setScenario,
   } = store;
 
   const selectedMissile = missiles.find((m) => m.id === selectedMissileId);
-  const missing = selectedMissile ? getMissingFields(selectedMissile) : [];
+  // Use fillMissingFields so SAMs with rich DCS data don't show spurious warnings
+  const filledMissile = selectedMissile ? fillMissingFields(selectedMissile) : null;
+  const missing = filledMissile ? getMissingFields(filledMissile) : [];
   const canSim = missing.length === 0;
 
   return (
@@ -87,9 +90,16 @@ export default function SetupPanel() {
           </>
         )}
         {shooterRole === 'ground' && (
-          <div style={{ color: '#446644', fontSize: 9, marginTop: 3 }}>
-            Speed: 0 kts — Heading: auto-aimed
-          </div>
+          <>
+            <div style={{ color: '#446644', fontSize: 9, marginTop: 3 }}>
+              Speed: 0 kts — Heading: auto-aimed
+            </div>
+            {label(`Lock Time: ${lockTime_s.toFixed(1)} s`, 'Time SAM radar acquires and locks the target before firing — target drifts during this period')}
+            <input type="range" min={0} max={12} step={0.5}
+              value={lockTime_s}
+              onChange={(e) => setScenario({ lockTime_s: +e.target.value })}
+              style={styles.slider} />
+          </>
         )}
 
         {label('Post-Launch Maneuver', 'Shooter maneuver after missile launch — affects datalink angle and F-pole')}
