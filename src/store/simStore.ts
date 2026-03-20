@@ -67,6 +67,8 @@ interface SimStore {
   salvoInterval_s: number;
   /** SAM pre-launch lock time in seconds (ground mode only) */
   lockTime_s: number;
+  /** Manual loft angle override in degrees (undefined = use missile default) */
+  manualLoftAngle_deg?: number;
 
   // Playback
   simFrames: SimFrame[];
@@ -149,6 +151,7 @@ export const useSimStore = create<SimStore>((set) => ({
   salvoCount: 1,
   salvoInterval_s: 2,
   lockTime_s: 4.0,
+  manualLoftAngle_deg: undefined,
 
   simFrames: [],
   currentFrameIdx: 0,

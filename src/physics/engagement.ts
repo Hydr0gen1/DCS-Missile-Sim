@@ -118,6 +118,8 @@ export interface ScenarioConfig {
   missile: MissileData;
   /** SAM pre-launch lock time: target flies this many seconds before missile launches (default 4s for ground, 0 for air) */
   lockTime_s?: number;
+  /** Manual loft angle override in degrees. Overrides the missile's built-in loft angle. 0 = flat trajectory. */
+  manualLoftAngle_deg?: number;
 }
 
 export interface EngagementResult {
@@ -370,8 +372,8 @@ export function runSimulation(cfg: ScenarioConfig): {
   const pnSchedule = m.guidance?.pn_schedule ?? null;
   const navN = m.guidanceNav ?? 4;
   const seekerRangeM = (m.seekerAcquisitionRange_nm ?? 10) * NM_TO_M;
-  // Prefer loft from DCS loft block, fall back to flat loftAngle_deg
-  const loftAngle = m.loft?.elevationDeg ?? m.loftAngle_deg ?? 0;
+  // Manual override takes priority; otherwise prefer DCS loft block, fall back to flat loftAngle_deg
+  const loftAngle = cfg.manualLoftAngle_deg ?? m.loft?.elevationDeg ?? m.loftAngle_deg ?? 0;
   const loftTriggerM = m.loft?.triggerRange_m ?? null;   // DCS ModelData[39]
   const loftDescentM = m.loft?.descentRange_m ?? null;   // DCS ModelData[40]
 
@@ -386,10 +388,11 @@ export function runSimulation(cfg: ScenarioConfig): {
   const MAWS_DETECT_RANGE_M = 11112;
 
   // Threat detection state (used when reactOnDetect=true)
-  // SARH: FCR lock is immediately detectable on RWR
+  // SARH: FCR lock is immediately detectable on RWR → detected at launch
   // ARH: detected when seeker goes active (ARH seeker pings the target)
-  // IR: detected by MAWS when missile motor burns within MAWS range, else never
-  let threatDetectedByTarget = m.type === 'SARH'; // SARH → detected at launch
+  // IR+datalink: shooter radar tracks target mid-course → detected at launch (same as SARH)
+  // IR without datalink: detected by MAWS only, else never
+  let threatDetectedByTarget = m.type === 'SARH' || (m.type === 'IR' && m.hasDatalink === true);
 
   // targetShouldManeuver: decoupled from seeker-active state.
   // - SARH/ARH without reactOnDetect: pilot sees STT/TWS lock on RWR → maneuver starts at launch.
@@ -511,15 +514,23 @@ export function runSimulation(cfg: ScenarioConfig): {
     const dySk = targetState.y - missileState.y;
     const rangeSk = Math.sqrt(dxSk * dxSk + dySk * dySk);
 
-    // IR: seeker is already locked before launch — activate immediately on first tick
+    // IR seeker activation:
+    // - Short-range IR (no datalink): seeker locked before launch, activate immediately
+    // - IR with datalink (R-27ET, MICA-IR etc): seeker activates at range like ARH
     if (!missileState.active && m.type === 'IR') {
-      missileState = { ...missileState, active: true };
-      if (!activeRecorded) {
-        const ssDx = shooterState.x - targetState.x;
-        const ssDy = shooterState.y - targetState.y;
-        aPoleNm = Math.sqrt(ssDx * ssDx + ssDy * ssDy) * M_TO_NM;
-        activeRecorded = true;
-        detectionTimeline.push({ time, type: 'missile_active', description: `${m.name} IR seeker locked at launch (${(rangeSk * M_TO_NM).toFixed(1)} nm)` });
+      const irReadyToActivate = !m.hasDatalink || rangeSk <= seekerRangeM;
+      if (irReadyToActivate) {
+        missileState = { ...missileState, active: true };
+        if (!activeRecorded) {
+          const ssDx = shooterState.x - targetState.x;
+          const ssDy = shooterState.y - targetState.y;
+          aPoleNm = Math.sqrt(ssDx * ssDx + ssDy * ssDy) * M_TO_NM;
+          activeRecorded = true;
+          const desc = m.hasDatalink
+            ? `${m.name} IR seeker activated at ${(rangeSk * M_TO_NM).toFixed(1)} nm — RWR goes silent`
+            : `${m.name} IR seeker locked at launch (${(rangeSk * M_TO_NM).toFixed(1)} nm)`;
+          detectionTimeline.push({ time, type: 'missile_active', description: desc });
+        }
       }
     }
     if (!missileState.active && m.type === 'ARH' && rangeSk <= seekerRangeM) {
@@ -902,6 +913,7 @@ export function runSimulation(cfg: ScenarioConfig): {
       motorBurning: burning,
       energy: energyFrac,
       trail: newTrail,
+      gLoad,
     };
 
     // Track peak speed and distance traveled
@@ -1364,7 +1376,22 @@ function computeRWR(
       });
     }
   }
-  // IR: no radar signature
+  // IR: no radar signature by default
+  // IR with datalink: shooter radar tracks during mid-course → RWR track strobe
+  // When seeker activates (terminal phase), radar goes silent → warning disappears
+  if (missileData.type === 'IR' && missileData.hasDatalink) {
+    const anyMidCourse = missiles.some(m => !m.done && !m.state.active);
+    if (anyMidCourse) {
+      radarThreats.push({
+        bearing: bearingNoise(relBearing(shooter.x, shooter.y), shooterRangeM, 'shooter-fcr', time),
+        type: 'track',
+        label: shooterRwrLabel,
+        intensity: Math.min(0.7, 30000 / Math.max(shooterRangeM, 1000)),
+        lastSeenTime: time,
+        emitterId: 'shooter-fcr',
+      });
+    }
+  }
 
   // ── MAWS: UV/IR detection for each in-flight missile ────────────────────────
   const MAWS_RANGE_MOTOR = 11112; // 6 nm — motor plume

@@ -3870,7 +3870,9 @@
     "seekerAcquisitionRange_nm": 13.5,
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 4.0,
-    "maxRange_nm": 21.6
+    "maxRange_nm": 21.6,
+    "hasDatalink": true,
+    "hasIOG": true
   },
   {
     "id": "mim-72g",
@@ -5058,7 +5060,9 @@
     "seekerAcquisitionRange_nm": 13.5,
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 4.0,
-    "maxRange_nm": 29.16
+    "maxRange_nm": 29.16,
+    "hasDatalink": true,
+    "hasIOG": true
   },
   {
     "id": "p-27t",
@@ -5179,7 +5183,9 @@
     "seekerAcquisitionRange_nm": 13.5,
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.2,
-    "maxRange_nm": 13.5
+    "maxRange_nm": 13.5,
+    "hasDatalink": true,
+    "hasIOG": true
   },
   {
     "id": "r-3s",
@@ -5421,7 +5427,9 @@
     "seekerAcquisitionRange_nm": 8.1,
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.8,
-    "maxRange_nm": 21.6
+    "maxRange_nm": 21.6,
+    "hasDatalink": true,
+    "hasIOG": true
   },
   {
     "id": "r-55",

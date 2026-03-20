@@ -69,6 +69,14 @@ export interface MissileData {
    */
   hasIOG?: boolean;
 
+  /**
+   * True if this IR missile uses INS + datalink mid-course guidance from the shooter's radar.
+   * During mid-course, the shooter radar tracks the target → target's RWR sees a track strobe.
+   * When the IR seeker activates at terminal phase, the radar goes silent — RWR warning disappears.
+   * Examples: R-27ET, R-27T, MICA-IR, R-40TD.
+   */
+  hasDatalink?: boolean;
+
   /** True if this is a synthetic test round, not a real weapon */
   isSynthetic?: boolean;
 
@@ -150,6 +158,8 @@ export interface AircraftData {
   rwrSymbol?: string;
   /** MAWS capability tier: 1=UV motor plume only (AN/AAR-47), 2=persistent UV tracking (DAS) */
   mawsTier?: number;
+  /** Missile IDs this aircraft can carry. Undefined = no restriction (shows all missiles). */
+  compatibleMissiles?: string[];
 }
 
 export interface RadarConfig {

@@ -1,7 +1,8 @@
 import { useSimStore } from '../store/simStore';
 import { M_TO_NM } from '../physics/atmosphere';
-import type { CMEvent } from '../physics/engagement';
 import { T } from './theme';
+
+const G = 9.80665;
 
 export default function ResultsPanel() {
   const { simResult, simError, simStatus, simFrames, currentFrameIdx } = useSimStore();
@@ -25,38 +26,50 @@ export default function ResultsPanel() {
       {frame && (
         <div style={styles.section}>
           <div style={styles.sectionTitle}>LIVE</div>
+
+          {/* Intercept geometry */}
           <Row label="T+" value={`${frame.time.toFixed(1)} s`} />
-          <Row label="MSL SPD" value={`${(frame.missile.speedMs * 1.94384).toFixed(0)} kt`} />
-          <Row label="MSL ALT" value={`${Math.round(frame.missile.altFt).toLocaleString()} ft`} />
+          <Row label="RANGE" value={`${(frame.range * M_TO_NM).toFixed(1)} nm`} />
           <Row label="CLOSURE" value={`${(frame.closingVelocity * 1.94384).toFixed(0)} kt`} />
           <Row label="TTI" value={frame.timeToImpact < 9999 ? `${frame.timeToImpact.toFixed(1)} s` : '—'} />
-          <Row label="RANGE" value={`${(frame.range * M_TO_NM).toFixed(1)} nm`} />
+
+          {/* Missile status */}
+          <div style={styles.divider} />
+          <Row label="MSL SPD" value={`${(frame.missile.speedMs * 1.94384).toFixed(0)} kt`} />
+          <Row label="MSL ALT" value={`${Math.round(frame.missile.altFt).toLocaleString()} ft`} />
+          {frame.missile.gLoad !== undefined && (
+            <Row label="MSL G" value={
+              <span style={{ color: gColor(frame.missile.gLoad) }}>
+                {frame.missile.gLoad.toFixed(1)}G
+              </span>
+            } />
+          )}
           <Row label="MSL NRG" value={
             <span style={{ color: energyColor(frame.energyFraction) }}>
               {(frame.energyFraction * 100).toFixed(0)}%
             </span>
           } />
+          <Row label="SEEKER" value={frame.missile.active ? <span style={{ color: T.success }}>ACTIVE</span> : 'SILENT'} />
+          <Row label="MOTOR" value={frame.missile.motorBurning ? <span style={{ color: T.warning }}>BURNING</span> : 'COAST'} />
+
+          {/* Target status */}
+          <div style={styles.divider} />
           <Row label="TGT SPD" value={`${(frame.target.speedMs * 1.94384).toFixed(0)} kt`} />
-          {frame.target.specificExcessPower !== 0 && (
-            <Row label="TGT Ps" value={
-              <span style={{ color: frame.target.specificExcessPower >= 0 ? T.success : T.danger }}>
-                {frame.target.specificExcessPower >= 0 ? '+' : ''}{frame.target.specificExcessPower.toFixed(1)} m/s
-              </span>
-            } />
-          )}
           {frame.target.currentG > 1.05 && (
             <Row label="TGT G" value={`${frame.target.currentG.toFixed(1)}G`} />
           )}
+
+          {/* Datalink */}
           {frame.datalinkActive !== undefined && (
-            <Row label="DLINK" value={
-              frame.datalinkActive
-                ? <span style={{ color: T.success }}>UP</span>
-                : <span style={{ color: T.danger }}>LOST</span>
-            } />
+            <>
+              <div style={styles.divider} />
+              <Row label="DLINK" value={
+                frame.datalinkActive
+                  ? <span style={{ color: T.success }}>UP</span>
+                  : <span style={{ color: T.danger }}>LOST</span>
+              } />
+            </>
           )}
-          <Row label="SEEKER" value={frame.missile.active ? <span style={{ color: T.success }}>ACTIVE</span> : 'SILENT'} />
-          <Row label="MOTOR" value={frame.missile.motorBurning ? <span style={{ color: T.warning }}>BURNING</span> : 'COAST'} />
-          {frame.cmEvent && <CMEventBadge event={frame.cmEvent} />}
         </div>
       )}
 
@@ -74,66 +87,19 @@ export default function ResultsPanel() {
           } />
           <Row label="TOF" value={`${simResult.timeOfFlight.toFixed(1)} s`} />
           <Row label="TERM SPD" value={`M${simResult.terminalSpeedMach.toFixed(2)}`} />
+          <Row label="MAX SPD" value={`M${simResult.maxSpeedMach.toFixed(2)}`} />
+          <Row label="MAX G" value={`${simResult.maxGLoad.toFixed(1)}G`} />
+          <Row label="DIST" value={`${simResult.distanceTraveledNm.toFixed(1)} nm`} />
           {!simResult.hit && (
             <Row label="MISS DIST" value={`${simResult.missDistance.toFixed(0)} m`} />
           )}
           <Row label="F-POLE" value={`${simResult.fPoleNm.toFixed(1)} nm`} />
-          <Row label="A-POLE" value={`${simResult.aPoleNm.toFixed(1)} nm`} />
-          {simResult.chaffSalvosUsed > 0 && (
-            <Row label="CHAFF" value={<span style={{ color: '#00aaff' }}>{simResult.chaffSalvosUsed} salvos</span>} />
-          )}
-          {simResult.flareSalvosUsed > 0 && (
-            <Row label="FLARES" value={<span style={{ color: '#ff8800' }}>{simResult.flareSalvosUsed} salvos</span>} />
-          )}
-          {simResult.seductionEvents.length > 0 && (
-            <div style={{ marginTop: 4 }}>
-              {simResult.seductionEvents.map((ev, i) => (
-                <CMEventBadge key={i} event={ev} />
-              ))}
-            </div>
-          )}
-          <Row label="TGT EXIT" value={`${simResult.targetExitSpeedKts.toFixed(0)} kts`} />
-          <Row label="SHT EXIT" value={`${simResult.shooterExitSpeedKts.toFixed(0)} kts`} />
-        </div>
-      )}
-
-      {/* Detection timeline */}
-      {simResult && simResult.detectionTimeline.length > 1 && (
-        <div style={styles.section}>
-          <div style={styles.sectionTitle}>DETECTION</div>
-          {simResult.detectionTimeline.map((ev, i) => (
-            <div key={i} style={styles.timelineEvent}>
-              <span style={{ color: timelineColor(ev.type), fontFamily: T.fontMono }}>
-                {ev.time.toFixed(1)}s
-              </span>
-              <span style={{ color: T.textDim, marginLeft: 6, fontSize: 9 }}>
-                {ev.description}
-              </span>
-            </div>
-          ))}
         </div>
       )}
 
       {simStatus === 'idle' && !simResult && (
         <div style={styles.idle}>Configure scenario and press LAUNCH to run engagement.</div>
       )}
-    </div>
-  );
-}
-
-function CMEventBadge({ event }: { event: CMEvent }) {
-  const color =
-    event.type === 'flare_seduced' ? T.typeIR :
-    event.type === 'chaff_seduced' ? T.typeARH :
-    event.type === 'reacquired' ? T.success : T.textDim;
-  const label =
-    event.type === 'flare_seduced' ? `FLARE SEDUCED (P=${(event.probability * 100).toFixed(0)}%)` :
-    event.type === 'chaff_seduced' ? `CHAFF SEDUCED (P=${(event.probability * 100).toFixed(0)}%)` :
-    event.type === 'reacquired' ? 'REACQUIRED' :
-    `CM DEFEATED (P=${(event.probability * 100).toFixed(0)}%)`;
-  return (
-    <div style={{ color, fontSize: 9, fontWeight: 'bold', marginBottom: 2, letterSpacing: 1 }}>
-      ▶ {label}
     </div>
   );
 }
@@ -165,15 +131,14 @@ function energyColor(e: number): string {
   return T.danger;
 }
 
-function timelineColor(type: string): string {
-  if (type === 'launch') return T.accentBright;
-  if (type === 'search_detected') return T.textDim;
-  if (type === 'stt_lock') return T.warning;
-  if (type === 'missile_active') return T.danger;
-  if (type === 'datalink_lost') return '#ff4444';
-  if (type === 'datalink_restored') return '#00cc44';
-  return T.text;
+function gColor(g: number): string {
+  if (g < 10) return T.text;
+  if (g < 20) return T.warning;
+  return T.danger;
 }
+
+// Keep G in scope for future use (suppresses unused warning)
+void G;
 
 const styles: Record<string, React.CSSProperties> = {
   panel: {
@@ -231,10 +196,9 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.6,
     marginTop: 10,
   },
-  timelineEvent: {
-    display: 'flex',
-    alignItems: 'baseline',
-    marginBottom: 3,
-    fontSize: 10,
+  divider: {
+    height: 1,
+    background: T.borderDim,
+    margin: '4px 0',
   },
 };

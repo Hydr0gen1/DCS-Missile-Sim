@@ -14,6 +14,8 @@ export interface MissileState {
   active: boolean;    // seeker gone active
   energy: number;     // 0–1 normalized energy remaining
   trail: Array<{ x: number; y: number; alt: number }>;
+  /** Instantaneous commanded G-load (guidance + gravity bias) for live telemetry */
+  gLoad?: number;
 }
 
 export interface MissingFields {
@@ -167,6 +169,7 @@ export function createMissileState(
     active: false,
     energy: 1,
     trail: [{ x: shooterX, y: shooterY, alt: altFt }],
+    gLoad: 0,
   };
 }
 
