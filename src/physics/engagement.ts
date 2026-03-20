@@ -15,26 +15,55 @@ import { DCS_CM_COEFFS } from '../data/dcsConstants';
 
 export const DT = 0.05; // seconds per physics step
 const G = 9.80665;
-const KILL_RADIUS_M = 8; // proximity fuze lethal radius (m)
+const KILL_RADIUS_M = 12; // proximity fuze lethal radius (m) — increased to account for warhead fragmentation pattern
 
 /**
- * Minimum 3-D distance between missile flight-segment [p0→p1] and target point T.
- * All inputs in metres. Returns metres.
- * Detects pass-through at any closing speed.
+ * Minimum 3-D distance between two line segments:
+ *   Segment A: p0 → p1 (missile path this tick)
+ *   Segment B: q0 → q1 (target path this tick)
+ * Returns the closest distance in metres.
+ * Handles the case where both objects are moving during the timestep,
+ * preventing pass-through misses at high combined closing speeds (Mach 6+).
  */
 function closestApproachDist(
-  mx0: number, my0: number, mz0: number,
-  mx1: number, my1: number, mz1: number,
-  tx: number,  ty: number,  tz: number,
+  p0x: number, p0y: number, p0z: number,  // missile start
+  p1x: number, p1y: number, p1z: number,  // missile end
+  q0x: number, q0y: number, q0z: number,  // target start
+  q1x: number, q1y: number, q1z: number,  // target end
 ): number {
-  const dx = mx1 - mx0, dy = my1 - my0, dz = mz1 - mz0;
-  const fx = tx - mx0,  fy = ty - my0,  fz = tz - mz0;
-  const len2 = dx * dx + dy * dy + dz * dz;
-  const t = len2 > 0.001 ? Math.max(0, Math.min(1, (fx * dx + fy * dy + fz * dz) / len2)) : 0;
-  const ex = mx0 + t * dx - tx;
-  const ey = my0 + t * dy - ty;
-  const ez = mz0 + t * dz - tz;
-  return Math.sqrt(ex * ex + ey * ey + ez * ez);
+  // Direction vectors
+  const dx = p1x - p0x, dy = p1y - p0y, dz = p1z - p0z; // missile direction
+  const ex = q1x - q0x, ey = q1y - q0y, ez = q1z - q0z; // target direction
+  const fx = p0x - q0x, fy = p0y - q0y, fz = p0z - q0z; // start separation
+
+  const a = dx * dx + dy * dy + dz * dz; // |d|²
+  const b = dx * ex + dy * ey + dz * ez; // d·e
+  const c = ex * ex + ey * ey + ez * ez; // |e|²
+  const d = dx * fx + dy * fy + dz * fz; // d·f
+  const e = ex * fx + ey * fy + ez * fz; // e·f
+
+  const denom = a * c - b * b;
+
+  let s: number, t: number;
+  if (denom < 0.001) {
+    // Segments nearly parallel — use midpoint
+    s = 0.5;
+    t = (b * s - e) / Math.max(c, 0.001);
+  } else {
+    s = (b * e - c * d) / denom;
+    t = (a * e - b * d) / denom;
+  }
+
+  // Clamp both parameters to [0, 1]
+  s = Math.max(0, Math.min(1, s));
+  t = Math.max(0, Math.min(1, t));
+
+  // Closest points on each segment
+  const cx = (p0x + s * dx) - (q0x + t * ex);
+  const cy = (p0y + s * dy) - (q0y + t * ey);
+  const cz = (p0z + s * dz) - (q0z + t * ez);
+
+  return Math.sqrt(cx * cx + cy * cy + cz * cz);
 }
 
 /**
@@ -224,6 +253,44 @@ export function runSimulation(cfg: ScenarioConfig): {
   const targetY = rangeM * Math.cos(aspectRad);
 
   const isGroundLaunched = cfg.shooterRole === 'ground';
+
+  // ── IR pre-launch seeker validation ────────────────────────────────────────
+  // IR missiles require a valid seeker lock before launch. If the target is
+  // beyond the seeker acquisition range, the missile cannot be fired.
+  if (m.type === 'IR') {
+    const seekerMaxRange = (m.seekerAcquisitionRange_nm ?? 10) * NM_TO_M;
+    if (rangeM > seekerMaxRange) {
+      return {
+        frames: [],
+        result: {
+          hit: false,
+          pk: 0,
+          timeOfFlight: 0,
+          missDistance: rangeM,
+          terminalSpeedMs: 0,
+          terminalSpeedMach: 0,
+          fPoleNm: 0,
+          aPoleNm: 0,
+          verdict: `Cannot launch — target beyond ${m.name} seeker range (${m.seekerAcquisitionRange_nm?.toFixed(1) ?? '?'} nm)`,
+          missReason: 'seeker cannot acquire',
+          chaffSalvosUsed: 0,
+          flareSalvosUsed: 0,
+          seductionEvents: [],
+          maxSpeedMach: 0,
+          maxGLoad: 0,
+          distanceTraveledNm: 0,
+          targetExitSpeedKts: cfg.targetSpeed,
+          shooterExitSpeedKts: cfg.shooterSpeed,
+          detectionTimeline: [],
+        },
+        maxRangeM: seekerMaxRange,
+        minRangeM: seekerMaxRange * 0.05,
+        nezM: seekerMaxRange * 0.25,
+        shooterStartX: 0,
+        shooterStartY: 0,
+      };
+    }
+  }
 
   // Ground launchers are stationary; heading is auto-aimed toward target
   const shooterSpeedMs = isGroundLaunched ? 0 : cfg.shooterSpeed * 0.514444;
@@ -427,7 +494,18 @@ export function runSimulation(cfg: ScenarioConfig): {
     const dySk = targetState.y - missileState.y;
     const rangeSk = Math.sqrt(dxSk * dxSk + dySk * dySk);
 
-    if (!missileState.active && (m.type === 'ARH' || m.type === 'IR') && rangeSk <= seekerRangeM) {
+    // IR: seeker is already locked before launch — activate immediately on first tick
+    if (!missileState.active && m.type === 'IR') {
+      missileState = { ...missileState, active: true };
+      if (!activeRecorded) {
+        const ssDx = shooterState.x - targetState.x;
+        const ssDy = shooterState.y - targetState.y;
+        aPoleNm = Math.sqrt(ssDx * ssDx + ssDy * ssDy) * M_TO_NM;
+        activeRecorded = true;
+        detectionTimeline.push({ time, type: 'missile_active', description: `${m.name} IR seeker locked at launch (${(rangeSk * M_TO_NM).toFixed(1)} nm)` });
+      }
+    }
+    if (!missileState.active && m.type === 'ARH' && rangeSk <= seekerRangeM) {
       missileState = { ...missileState, active: true };
       if (!activeRecorded) {
         const ssDx = shooterState.x - targetState.x;
@@ -443,6 +521,20 @@ export function runSimulation(cfg: ScenarioConfig): {
         aPoleNm = cfg.rangeNm;
         activeRecorded = true;
         detectionTimeline.push({ time, type: 'missile_active', description: `${m.name} SARH seeker active` });
+      }
+    }
+
+    // --- IR lock loss: target opened range beyond 1.5× seeker acquisition range ---
+    // IR seekers cannot reacquire at long range; missile goes ballistic if outrun.
+    if (missileState.active && m.type === 'IR') {
+      const irMaxTrackRange = seekerRangeM * 1.5;
+      if (rangeSk > irMaxTrackRange && !seduced) {
+        missileState = { ...missileState, active: false };
+        lastKnownTargetX = targetState.x;
+        lastKnownTargetY = targetState.y;
+        seduced = true;
+        seductionEndTime = time + 9999; // permanent ballistic — no reacquire at range
+        detectionTimeline.push({ time, type: 'launch', description: `${m.name} seeker lost lock — target outran at ${(rangeSk * M_TO_NM).toFixed(1)} nm` });
       }
     }
 
@@ -748,13 +840,14 @@ export function runSimulation(cfg: ScenarioConfig): {
       break;
     }
 
-    // ── CPA hit detection: catches pass-through at any closing speed ──────────
+    // ── CPA hit detection: segment-vs-segment catches pass-through ───────────
     const newMx = missileState.x + newVx * DT;
     const newMy = missileState.y + newVy * DT;
     const cpa = closestApproachDist(
-      missileState.x, missileState.y, missileState.altFt * FT_TO_M,
-      newMx, newMy, newAlt * FT_TO_M,
-      newTarget.x, newTarget.y, newTarget.altFt * FT_TO_M,
+      missileState.x, missileState.y, missileState.altFt * FT_TO_M,  // missile start
+      newMx, newMy, newAlt * FT_TO_M,                                 // missile end
+      targetState.x, targetState.y, targetState.altFt * FT_TO_M,     // target start (pre-step)
+      newTarget.x, newTarget.y, newTarget.altFt * FT_TO_M,            // target end (post-step)
     );
     if (!seduced && cpa < KILL_RADIUS_M) {
       hitDetected = true;
@@ -953,11 +1046,12 @@ export function runSimulation(cfg: ScenarioConfig): {
         const sNewMx = slot.state.x + sNewVx * DT;
         const sNewMy = slot.state.y + sNewVy * DT;
 
-        // Hit/miss check
+        // Hit/miss check — segment-vs-segment CPA
         const sCpa = closestApproachDist(
-          slot.state.x, slot.state.y, slot.state.altFt * FT_TO_M,
-          sNewMx, sNewMy, sNewAlt * FT_TO_M,
-          newTarget.x, newTarget.y, newTarget.altFt * FT_TO_M,
+          slot.state.x, slot.state.y, slot.state.altFt * FT_TO_M,  // missile start
+          sNewMx, sNewMy, sNewAlt * FT_TO_M,                        // missile end
+          targetState.x, targetState.y, targetState.altFt * FT_TO_M, // target start
+          newTarget.x, newTarget.y, newTarget.altFt * FT_TO_M,       // target end
         );
         if (!slot.seduced && sCpa < KILL_RADIUS_M) {
           slot.done = true;

@@ -3,6 +3,10 @@
  *
  * All sounds are synthesized via OscillatorNode + GainNode — no audio files.
  * Call initRWRAudio() once on first user interaction to create the AudioContext.
+ *
+ * Looping functions (startLockTone, startLaunchWarble, startMAWSAlarm,
+ * startSearchPing) manage their own setInterval handles and must be stopped
+ * by calling the corresponding stop* function or stopAllLoops().
  */
 
 let ctx: AudioContext | null = null;
@@ -18,7 +22,7 @@ function getCtx(): AudioContext | null {
   return ctx;
 }
 
-/** Single beep at given frequency and duration */
+/** Single synthesized beep */
 function beep(freqHz: number, durationS: number, gainPeak = 0.25, waveform: OscillatorType = 'sine'): void {
   const c = getCtx();
   if (!c) return;
@@ -36,7 +40,7 @@ function beep(freqHz: number, durationS: number, gainPeak = 0.25, waveform: Osci
   osc.stop(c.currentTime + durationS);
 }
 
-/** Two-tone sweep */
+/** Frequency sweep */
 function sweep(startHz: number, endHz: number, durationS: number, gainPeak = 0.25): void {
   const c = getCtx();
   if (!c) return;
@@ -55,56 +59,93 @@ function sweep(startHz: number, endHz: number, durationS: number, gainPeak = 0.2
   osc.stop(c.currentTime + durationS);
 }
 
-/**
- * New radar contact detected (search/track).
- * Single mid-tone blip.
- */
+// ── One-shot tones (for transition events) ───────────────────────────────────
+
+/** New radar contact — plays once on first detection */
 export function playNewContact(): void {
   beep(880, 0.06, 0.2, 'sine');
 }
 
-/**
- * Periodic search-mode ping (low priority, played once per ~2 s while search only).
- * Subtle low tick.
- */
-export function playSearchPing(): void {
-  beep(440, 0.04, 0.12, 'sine');
-}
-
-/**
- * Radar lock acquired (STT track) — upgrade from search.
- * Two quick rising tones.
- */
-export function playLockTone(): void {
-  beep(900, 0.07, 0.22, 'square');
-  setTimeout(() => beep(1200, 0.07, 0.22, 'square'), 100);
-}
-
-/**
- * Missile launch detected (LAUNCH warning).
- * Rapid repeating high-pitched warble.
- */
-export function playLaunchWarning(): void {
-  beep(1400, 0.08, 0.3, 'sawtooth');
-  setTimeout(() => beep(1000, 0.08, 0.3, 'sawtooth'), 110);
-  setTimeout(() => beep(1400, 0.08, 0.3, 'sawtooth'), 220);
-  setTimeout(() => beep(1000, 0.08, 0.3, 'sawtooth'), 330);
-}
-
-/**
- * ARH seeker gone active (PITBULL).
- * Rising sweep — distinct from lock tone.
- */
+/** ARH seeker gone active (pitbull) — rising sweep, plays once */
 export function playPitbullChirp(): void {
   sweep(600, 1800, 0.18, 0.28);
 }
 
+// ── Looping tone handles ──────────────────────────────────────────────────────
+
+let lockLoopId: ReturnType<typeof setInterval> | null = null;
+let launchLoopId: ReturnType<typeof setInterval> | null = null;
+let mawsLoopId: ReturnType<typeof setInterval> | null = null;
+let searchLoopId: ReturnType<typeof setInterval> | null = null;
+
 /**
- * MAWS first detect (missile motor plume).
- * Harsh sawtooth burst — most urgent warning.
+ * Start repeating STT lock tone (~2×/sec).
+ * Plays immediately, then every 500 ms until stopLockTone() is called.
  */
-export function playMAWSWarning(): void {
-  beep(1600, 0.07, 0.35, 'sawtooth');
-  setTimeout(() => beep(1600, 0.07, 0.35, 'sawtooth'), 90);
-  setTimeout(() => beep(1600, 0.07, 0.35, 'sawtooth'), 180);
+export function startLockTone(): void {
+  if (lockLoopId) return;
+  const play = () => beep(900, 0.07, 0.18, 'square');
+  play();
+  lockLoopId = setInterval(play, 500);
+}
+
+export function stopLockTone(): void {
+  if (lockLoopId) { clearInterval(lockLoopId); lockLoopId = null; }
+}
+
+/**
+ * Start rapid launch/active warble (~7.7 Hz alternating tones).
+ * Highest-priority warning — runs until stopLaunchWarble() is called.
+ */
+export function startLaunchWarble(): void {
+  if (launchLoopId) return;
+  let toggle = false;
+  const play = () => {
+    beep(toggle ? 1400 : 1000, 0.08, 0.25, 'sawtooth');
+    toggle = !toggle;
+  };
+  play();
+  launchLoopId = setInterval(play, 130);
+}
+
+export function stopLaunchWarble(): void {
+  if (launchLoopId) { clearInterval(launchLoopId); launchLoopId = null; }
+}
+
+/**
+ * Start MAWS pulsing alarm (~3.3×/sec harsh sawtooth).
+ * Runs until stopMAWSAlarm() is called.
+ */
+export function startMAWSAlarm(): void {
+  if (mawsLoopId) return;
+  const play = () => beep(1600, 0.07, 0.3, 'sawtooth');
+  play();
+  mawsLoopId = setInterval(play, 300);
+}
+
+export function stopMAWSAlarm(): void {
+  if (mawsLoopId) { clearInterval(mawsLoopId); mawsLoopId = null; }
+}
+
+/**
+ * Start periodic radar search ping (~1× per sweep cycle).
+ * @param sweepIntervalMs milliseconds between pings (default 6000 = 6s sweep)
+ */
+export function startSearchPing(sweepIntervalMs = 6000): void {
+  if (searchLoopId) return;
+  const play = () => beep(440, 0.04, 0.08, 'sine');
+  play();
+  searchLoopId = setInterval(play, sweepIntervalMs);
+}
+
+export function stopSearchPing(): void {
+  if (searchLoopId) { clearInterval(searchLoopId); searchLoopId = null; }
+}
+
+/** Stop ALL active loops immediately (call on sim reset, pause, or unmount) */
+export function stopAllLoops(): void {
+  stopLockTone();
+  stopLaunchWarble();
+  stopMAWSAlarm();
+  stopSearchPing();
 }

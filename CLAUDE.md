@@ -80,7 +80,7 @@ DCS World ──► Quaggles datamine ──► tools/dcs_data_extractor.py ─�
 
 ```
 Per tick:
-  1. Seeker activation check (ARH/IR: range gate; SARH: immediate)
+  1. Seeker activation check (ARH: range gate; IR: immediate at launch — pre-locked; SARH: immediate)
   2. Radar detection timeline (shooter radar → search_detected → stt_lock events)
   3. Threat detection (gates targetShouldManeuver flag via MAWS/RWR — decoupled from seeker-active)
   4. targetShouldManeuver update:
@@ -96,7 +96,7 @@ Per tick:
   9. Thrust & mass: getThrustAndMass(t, phases) or linear burnout fallback
   10. Drag: getCxDCS(mach, Cx) × A_ref (or fallback multiplier)
   11. Integrate: newVx, newVy, newVz, newAlt; speedMs = sqrt(vx²+vy²+vz²) [true 3D airspeed]
-  12. CPA hit detection: closestApproachDist(oldPos→newPos vs target) < 8m
+  12. CPA hit detection: closestApproachDist(missile seg, target seg) < 12m  [segment-vs-segment]
   13. Ground-strike check (post-burnout)
   12. Accumulate: trail, peak speed/G, distance
 ```
@@ -211,7 +211,7 @@ python tools/dcs_data_extractor.py --datamine-path ./datamine --missile AIM_120C
 |------|---------|
 | `src/data/missiles.json` | 96 A2A/SAM missiles extracted from DCS datamine |
 | `src/data/types.ts` | TypeScript interfaces — `MissileData`, `CxCoeffs`, `ThrustPhase`, `PNEntry`, `DLZ` |
-| `src/physics/engagement.ts` | Main simulation loop, CPA hit detection (8m kill radius), CPA algorithm |
+| `src/physics/engagement.ts` | Main simulation loop, segment-vs-segment CPA (12m kill radius) |
 | `src/physics/missile.ts` | `getCxDCS()`, `getThrustAndMass()`, `dragForce()` |
 | `src/physics/guidance.ts` | `proportionalNav()`, `getPNGain()`, `clampAcceleration()` |
 | `src/physics/aircraft.ts` | Aircraft state, `stepAircraft()`, maneuver turn rates |
@@ -272,14 +272,20 @@ SD-10 and PL-12 use full schedule: `[12km:1.0, 18km:0.75, 30km:0.5, 48km:0.2]`
 ### 4. Closest Point of Approach (CPA) Hit Detection
 
 ```typescript
-// In engagement.ts: closestApproachDist(mx0,my0,mz0, mx1,my1,mz1, tx,ty,tz)
-// Returns minimum 3D distance (metres) between missile path segment and target
-// Kill radius = 8m (real proximity fuze; works even at Mach 4+ closing speeds)
+// In engagement.ts: closestApproachDist(p0, p1, q0, q1)
+// Segment-vs-segment: tests missile path [p0→p1] against target path [q0→q1] per tick.
+// Returns minimum 3D distance in metres. Kill radius = 12m.
 ```
 
-Without CPA, a Mach 4 missile (68 m/step at DT=0.05s) would miss a 8m target every time.
+Both the missile AND the target move during each 0.05 s tick. At Mach 6 combined closing speed (~2000 m/s), the target moves 12+ m per tick — testing only the target's endpoint (old algorithm) could miss direct hits when the actual CPA was mid-tick. The segment-vs-segment formulation finds the true minimum over the full parametric intersection of both paths.
 
-### 5. Guidance Control Delay
+### 5. IR Seeker Behavior
+
+- **Pre-launch lock required**: IR missiles (`m.type === 'IR'`) cannot be fired if the target is beyond `seekerAcquisitionRange_nm`. `runSimulation()` returns a "cannot launch" result with `verdict: "Cannot launch — target beyond X seeker range"` before any simulation frames are generated.
+- **Immediate activation at launch**: IR seekers are locked before firing (pilot hears tone before pressing pickle). The seeker is set `active = true` on the first simulation tick — no range-gate delay unlike ARH.
+- **Lock loss if target outruns seeker**: If the target exceeds `1.5 × seekerAcquisitionRange_nm` during flight, the missile loses lock, `active` is set to `false`, and the missile goes ballistic (treated as seduced, `seductionEndTime = t + 9999` — no reacquire). This models IR seekers being outrun by targets going cold and fast.
+
+### 6. Guidance Control Delay
 
 Some missiles fly ballistically after launch before guidance activates (fins locked). Read from `guidance.controlDelay_s` or `guidance.autopilot.delay_s` (DCS ModelData[38]). Capped at **2.0 s** to prevent unrealistic ballistic arcs.
 
@@ -397,14 +403,17 @@ function computeRWR(
 
 **Web Audio** (rwrAudio.ts):
 - `initRWRAudio()` — creates `AudioContext` (call on first user interaction)
-- `playNewContact()` — new search/track contact (880 Hz beep)
-- `playSearchPing()` — periodic search mode tick (440 Hz subtle)
-- `playLockTone()` — STT lock acquired (dual rising square-wave)
-- `playLaunchWarning()` — launch detected (sawtooth warble ×4)
-- `playPitbullChirp()` — ARH goes active (600→1800 Hz sweep)
-- `playMAWSWarning()` — MAWS onset (1600 Hz sawtooth ×3)
+- One-shot tones (play once on transitions):
+  - `playNewContact()` — new radar contact chirp (880 Hz)
+  - `playPitbullChirp()` — ARH seeker goes active (600→1800 Hz sweep)
+- Looping tones (start/stop pairs, managed by RWRDisplay based on current threat state):
+  - `startLockTone()` / `stopLockTone()` — repeating 2 Hz square-wave while STT lock active
+  - `startLaunchWarble()` / `stopLaunchWarble()` — rapid 7.7 Hz alternating sawtooth for launch/active
+  - `startMAWSAlarm()` / `stopMAWSAlarm()` — 3.3 Hz sawtooth pulse while MAWS warning active
+  - `startSearchPing()` / `stopSearchPing()` — periodic 440 Hz ping per radar sweep cycle
+  - `stopAllLoops()` — stops all active loops (call on pause, reset, unmount)
 - All synthesis: `OscillatorNode` + `GainNode`; no audio files
-- RWRDisplay fires tones on edge transitions only (type change, new emitterId, MAWS onset)
+- Priority: launch warble > lock tone > search ping; MAWS alarm runs independently
 - Muted when `rwrAudioMuted=true` in Zustand store; toggle button in RWRDisplay
 
 **RWRDisplay visual features**:
@@ -429,8 +438,9 @@ function computeRWR(
 - **Missile position**: full 3D — `MissileState` tracks `{x, y, vx, vy, vz, altFt}`. `vz` integrates every tick with gravity, thrust, and drag contributions.
 - **Gravity**: applied to `vz` as `−G * DT` every step.
 - **Drag**: computed on full 3D speed `sqrt(vx²+vy²+vz²)`; the drag force vector is decomposed along all three velocity components.
-- **CPA hit detection**: uses all three coordinates `(x, y, altFt*FT_TO_M)` for both missile and target.
+- **CPA hit detection**: segment-vs-segment across all three coordinates — both missile and target move during the tick.
 - **3D view** (`TacticalDisplay3D.tsx`): reads actual `altFt` from every `SimFrame` and renders with `worldTo3D(x, y, altFt)` → correct `[east, altitude, −north]` in Three.js space.
+- **Entity sizes**: aircraft sphere 150m, ground launcher box 200×150×200m, missile cone 60×200m (16 radial segments = smooth), CM box 30×30×30m.
 - **Aircraft altitude maneuvers**: notch descends at 100 ft/s (`vzMs = −30.5 m/s`), bunt at 250 ft/s (`vzMs = −76.2 m/s`). These are passed as `tvz` to the guidance law.
 
 ### What was cosmetic (upgraded as of this session)

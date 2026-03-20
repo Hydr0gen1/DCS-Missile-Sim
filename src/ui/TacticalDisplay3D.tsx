@@ -38,7 +38,7 @@ function AircraftEntity({ pos, color }: { pos: [number, number, number]; color: 
   useFrame(() => { if (meshRef.current) meshRef.current.position.set(...pos); });
   return (
     <mesh ref={meshRef}>
-      <sphereGeometry args={[500, 8, 8]} />
+      <sphereGeometry args={[150, 12, 12]} />
       <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.5} />
     </mesh>
   );
@@ -51,15 +51,14 @@ function GroundLauncherEntity({ pos }: { pos: [number, number, number] }) {
   useFrame(() => { if (meshRef.current) meshRef.current.position.set(...pos); });
   return (
     <mesh ref={meshRef}>
-      <boxGeometry args={[700, 600, 700]} />
+      <boxGeometry args={[200, 150, 200]} />
       <meshStandardMaterial color="#00aaff" emissive="#004488" emissiveIntensity={0.4} />
     </mesh>
   );
 }
 
-// ─── Missile triangle ─────────────────────────────────────────────────────────
-// ConeGeometry with 3 radial segments = triangle; tip (+Y default) rotated to
-// point along the 3-D velocity vector so the "top" tracks direction of travel.
+// ─── Missile cone ─────────────────────────────────────────────────────────────
+// ConeGeometry tip (+Y default) rotated to point along the 3-D velocity vector.
 
 const _up = new THREE.Vector3(0, 1, 0);
 const _vel = new THREE.Vector3();
@@ -81,7 +80,7 @@ function MissileEntity({ pos, vx, vy, vz }: {
 
   return (
     <mesh ref={meshRef}>
-      <coneGeometry args={[200, 700, 3]} />
+      <coneGeometry args={[60, 200, 16]} />
       <meshStandardMaterial color="#ff8800" emissive="#ff4400" emissiveIntensity={0.8} />
     </mesh>
   );
@@ -325,7 +324,7 @@ function SceneContent() {
         const color = cm.type === 'flare' ? '#ffee44' : '#44ccff';
         return (
           <mesh key={cm.id} position={cmPos}>
-            <boxGeometry args={[80, 80, 80]} />
+            <boxGeometry args={[30, 30, 30]} />
             <meshBasicMaterial color={color} transparent opacity={cm.opacity * 0.9} />
           </mesh>
         );

@@ -15,10 +15,12 @@ import { T } from './theme';
 import {
   initRWRAudio,
   playNewContact,
-  playLockTone,
-  playLaunchWarning,
   playPitbullChirp,
-  playMAWSWarning,
+  startLockTone, stopLockTone,
+  startLaunchWarble, stopLaunchWarble,
+  startMAWSAlarm, stopMAWSAlarm,
+  startSearchPing, stopSearchPing,
+  stopAllLoops,
 } from '../audio/rwrAudio';
 
 const R = 70;          // scope radius px
@@ -195,12 +197,10 @@ export default function RWRDisplay() {
   const launchWarning = rwr?.launchWarning ?? false;
   const mawsWarning   = rwr?.mawsWarning   ?? false;
 
-  // Track previous RWR state for audio edge detection
+  // Refs for transition detection (one-shot events)
   const prevThreatsRef = useRef<RWRThreat[]>([]);
-  const prevMawsWarnRef = useRef(false);
   const audioInitRef = useRef(false);
 
-  // Audio: init on first interaction (store muted pref, but still init ctx)
   function ensureAudio() {
     if (!audioInitRef.current) {
       initRWRAudio();
@@ -208,11 +208,64 @@ export default function RWRDisplay() {
     }
   }
 
-  // Audio effect: fire tones on threat state changes, only while playing
+  // ── Stop all loops when paused, muted, or unmounted ─────────────────────────
+  useEffect(() => {
+    if (!isPlaying || rwrAudioMuted) {
+      stopAllLoops();
+      return;
+    }
+    return () => stopAllLoops();
+  }, [isPlaying, rwrAudioMuted]);
+
+  // ── Manage looping tones based on current threat state ───────────────────────
+  useEffect(() => {
+    if (!isPlaying || rwrAudioMuted) return;
+
+    const hasActive = radarThreats.some(t => t.type === 'active');
+    const hasLaunch = radarThreats.some(t => t.type === 'launch');
+    const hasTrack  = radarThreats.some(t => t.type === 'track');
+    const hasSearch = radarThreats.some(t => t.type === 'search');
+
+    // Active seeker or launch warning = warble (highest priority)
+    if (hasActive || hasLaunch) {
+      stopLockTone();
+      stopSearchPing();
+      ensureAudio();
+      startLaunchWarble();
+    } else {
+      stopLaunchWarble();
+    }
+
+    // STT lock = repeating lock tone (only when no active/launch)
+    if (hasTrack && !hasActive && !hasLaunch) {
+      stopSearchPing();
+      ensureAudio();
+      startLockTone();
+    } else if (!hasTrack) {
+      stopLockTone();
+    }
+
+    // Search only = periodic ping
+    if (hasSearch && !hasTrack && !hasActive && !hasLaunch) {
+      ensureAudio();
+      startSearchPing();
+    } else if (!hasSearch) {
+      stopSearchPing();
+    }
+
+    // MAWS alarm
+    if (mawsWarning) {
+      ensureAudio();
+      startMAWSAlarm();
+    } else {
+      stopMAWSAlarm();
+    }
+  }, [radarThreats, mawsWarning, isPlaying, rwrAudioMuted]);
+
+  // ── One-shot chirps for new-contact and pitbull transitions ──────────────────
   useEffect(() => {
     if (!isPlaying || rwrAudioMuted) {
       prevThreatsRef.current = radarThreats;
-      prevMawsWarnRef.current = mawsWarning;
       return;
     }
 
@@ -221,43 +274,22 @@ export default function RWRDisplay() {
     const prevTypes = new Map(prev.map(t => [t.emitterId, t.type]));
 
     for (const t of radarThreats) {
-      const wasPresent = prevIds.has(t.emitterId);
-      const prevType = prevTypes.get(t.emitterId);
-
-      if (!wasPresent) {
+      if (!prevIds.has(t.emitterId)) {
         // Brand-new contact
         ensureAudio();
-        if (t.type === 'active') {
+        if (t.type === 'active') playPitbullChirp();
+        else playNewContact();
+      } else {
+        const pt = prevTypes.get(t.emitterId);
+        if (pt !== 'active' && t.type === 'active') {
+          ensureAudio();
           playPitbullChirp();
-        } else if (t.type === 'launch') {
-          playLaunchWarning();
-        } else if (t.type === 'track') {
-          playLockTone();
-        } else {
-          playNewContact();
-        }
-      } else if (prevType !== t.type) {
-        // Threat type upgraded
-        ensureAudio();
-        if (t.type === 'active' && prevType !== 'active') {
-          playPitbullChirp();
-        } else if (t.type === 'launch' && prevType !== 'launch') {
-          playLaunchWarning();
-        } else if (t.type === 'track' && (prevType === 'search' || prevType === undefined)) {
-          playLockTone();
         }
       }
     }
 
-    // MAWS onset
-    if (mawsWarning && !prevMawsWarnRef.current) {
-      ensureAudio();
-      playMAWSWarning();
-    }
-
     prevThreatsRef.current = radarThreats;
-    prevMawsWarnRef.current = mawsWarning;
-  }, [radarThreats, mawsWarning, isPlaying, rwrAudioMuted]);
+  }, [radarThreats, isPlaying, rwrAudioMuted]);
 
   return (
     <div style={styles.panel}>
