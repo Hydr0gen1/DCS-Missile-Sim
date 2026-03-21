@@ -7,7 +7,13 @@ export type ManeuverType =
   | 'notch'
   | 'bunt'
   | 'break'
-  | 'custom';
+  | 'custom'
+  // Dogfight maneuvers (relative to opponent, not missile):
+  | 'pursuit'      // Turn toward opponent's 6 o'clock (offensive)
+  | 'scissors'     // Alternating reversals to force overshoot
+  | 'barrel_roll'  // Roll-scissors: barrel roll to get behind opponent
+  | 'break_into'   // Hard turn INTO the opponent (forces head-on, removes angle advantage)
+  | 'extend';      // Disengage — fly away at max speed
 
 export interface AircraftState {
   x: number;          // m
@@ -27,6 +33,10 @@ export interface AircraftState {
   specificEnergy: number;       // E_s = alt_m + V²/(2g) [m]
   specificExcessPower: number;  // Ps = dE_s/dt [m/s], + = gaining, - = bleeding
   currentG: number;             // G being pulled this tick
+  // Path trail (max 500 points)
+  trail: Array<{ x: number; y: number; alt: number }>;
+  /** Elapsed simulation time (s) — used by dogfight maneuvers for phase timing */
+  timeFlight?: number;
 }
 
 /** Create initial aircraft state */
@@ -63,6 +73,7 @@ export function createAircraftState(
     specificEnergy,
     specificExcessPower: 0,
     currentG: 1.0,
+    trail: [],
   };
 }
 
@@ -78,11 +89,16 @@ const RHO_SL = 1.225; // kg/m³ sea-level density
 function maneuverG(m: ManeuverType, shouldManeuver: boolean): number {
   if (!shouldManeuver) return 1.0;
   switch (m) {
-    case 'break':  return MAX_G;
-    case 'notch':  return NOTCH_G;
-    case 'crank':  return CRANK_G;
-    case 'bunt':   return 1.5;  // pushover, moderate load
-    default:       return 1.0;
+    case 'break':      return MAX_G;
+    case 'notch':      return NOTCH_G;
+    case 'crank':      return CRANK_G;
+    case 'bunt':       return 1.5;
+    case 'pursuit':    return 7.0;
+    case 'scissors':   return MAX_G;
+    case 'barrel_roll':return 5.0;
+    case 'break_into': return MAX_G;
+    case 'extend':     return 2.0;
+    default:           return 1.0;
   }
 }
 
@@ -96,6 +112,8 @@ export function stepAircraft(
   shouldManeuver: boolean,
   threatDetected: boolean = true,
   config?: AircraftData,
+  /** Opponent aircraft state (used for dogfight maneuvers: pursuit, scissors, etc.) */
+  opponentState?: AircraftState,
 ): AircraftState {
   let { x, y, vx, vy, altFt, speedMs, headingDeg, maneuver, waypointIdx, waypoints } = state;
   let vzMs = 0;
@@ -140,6 +158,72 @@ export function stepAircraft(
         const breakDelta = breakTurnRate * dt;
         const breakDiff = normalizeAngle(breakRad - headingRad);
         headingRad += Math.sign(breakDiff) * Math.min(Math.abs(breakDiff), breakDelta);
+        break;
+      }
+      case 'pursuit': {
+        if (opponentState) {
+          // Aim for opponent's 6 o'clock: 200m behind their nose
+          const oppHeadRad = (opponentState.headingDeg * Math.PI) / 180;
+          const sixX = opponentState.x - 200 * Math.sin(oppHeadRad);
+          const sixY = opponentState.y - 200 * Math.cos(oppHeadRad);
+          const pursuitRad = Math.atan2(sixX - x, sixY - y);
+          const pursuitTurnRate = (7.0 * G) / Math.max(speedMs, 50);
+          const pursuitDelta = pursuitTurnRate * dt;
+          const pursuitDiff = normalizeAngle(pursuitRad - headingRad);
+          headingRad += Math.sign(pursuitDiff) * Math.min(Math.abs(pursuitDiff), pursuitDelta);
+        } else {
+          // Fallback to break when no opponent data
+          const pFallRad = missileAngle + (90 * Math.PI) / 180;
+          const pFallRate = (7.0 * G) / Math.max(speedMs, 50);
+          const pFallDiff = normalizeAngle(pFallRad - headingRad);
+          headingRad += Math.sign(pFallDiff) * Math.min(Math.abs(pFallDiff), pFallRate * dt);
+        }
+        break;
+      }
+      case 'scissors':
+      case 'barrel_roll': {
+        if (opponentState) {
+          // Alternate 80° offsets from opponent bearing every 3 seconds
+          const scissorPeriod = 3.0;
+          const scissorPhase = Math.floor((state.timeFlight ?? 0) / scissorPeriod) % 2;
+          const oppBearing = Math.atan2(opponentState.x - x, opponentState.y - y);
+          const scissorOffset = scissorPhase === 0
+            ? (80 * Math.PI) / 180
+            : -(80 * Math.PI) / 180;
+          const scissorTarget = oppBearing + scissorOffset;
+          const scissorTurnRate = (MAX_G * G) / Math.max(speedMs, 50);
+          const scissorDelta = scissorTurnRate * dt;
+          const scissorDiff = normalizeAngle(scissorTarget - headingRad);
+          headingRad += Math.sign(scissorDiff) * Math.min(Math.abs(scissorDiff), scissorDelta);
+        }
+        break;
+      }
+      case 'break_into': {
+        if (opponentState) {
+          // Hard turn directly toward opponent
+          const intoRad = Math.atan2(opponentState.x - x, opponentState.y - y);
+          const intoTurnRate = (MAX_G * G) / Math.max(speedMs, 50);
+          const intoDelta = intoTurnRate * dt;
+          const intoDiff = normalizeAngle(intoRad - headingRad);
+          headingRad += Math.sign(intoDiff) * Math.min(Math.abs(intoDiff), intoDelta);
+        } else {
+          // Fallback: break toward missile
+          const btRad = missileAngle;
+          const btRate = (MAX_G * G) / Math.max(speedMs, 50);
+          const btDiff = normalizeAngle(btRad - headingRad);
+          headingRad += Math.sign(btDiff) * Math.min(Math.abs(btDiff), btRate * dt);
+        }
+        break;
+      }
+      case 'extend': {
+        if (opponentState) {
+          // Fly directly away from opponent
+          const awayRad = Math.atan2(x - opponentState.x, y - opponentState.y);
+          const extTurnRate = (2.0 * G) / Math.max(speedMs, 50);
+          const extDelta = extTurnRate * dt;
+          const extDiff = normalizeAngle(awayRad - headingRad);
+          headingRad += Math.sign(extDiff) * Math.min(Math.abs(extDiff), extDelta);
+        }
         break;
       }
     }
@@ -191,6 +275,9 @@ export function stepAircraft(
 
   const specificEnergy = altFt * FT_TO_M + speedMs * speedMs / (2 * G);
 
+  const newTrail = [...state.trail, { x, y, alt: altFt }];
+  if (newTrail.length > 500) newTrail.shift();
+
   return {
     ...state,
     x: x + vx * dt,
@@ -205,6 +292,8 @@ export function stepAircraft(
     specificEnergy,
     specificExcessPower,
     currentG,
+    trail: newTrail,
+    timeFlight: (state.timeFlight ?? 0) + dt,
   };
 }
 

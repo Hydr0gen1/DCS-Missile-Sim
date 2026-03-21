@@ -20,7 +20,7 @@ export default function SetupPanel() {
     targetManeuver, targetChaffCount, targetFlareCount, targetReactOnDetect,
     rangeNm, aspectAngleDeg, selectedMissileId,
     shooterManeuver, salvoCount, salvoInterval_s,
-    lockTime_s, manualLoftAngle_deg,
+    lockTime_s, manualLoftAngle_deg, salvoMissileIds,
     setScenario,
   } = store;
 
@@ -188,6 +188,13 @@ export default function SetupPanel() {
           <option value="bunt">Bunt & Drag (Dive + Accel)</option>
           <option value="break">Break Turn (Max-G perp.)</option>
           <option value="custom">Custom Waypoints (click map)</option>
+          <optgroup label="── Dogfight ──────────">
+            <option value="pursuit">Pursuit (turn to shooter's 6)</option>
+            <option value="scissors">Scissors (alternating reversals)</option>
+            <option value="barrel_roll">Barrel Roll (rolling scissors)</option>
+            <option value="break_into">Break Into (hard turn toward shooter)</option>
+            <option value="extend">Extend (disengage, fly away)</option>
+          </optgroup>
         </select>
 
         <label
@@ -234,6 +241,22 @@ export default function SetupPanel() {
 
       <div style={styles.section}>
         <div style={styles.sectionTitle}>GEOMETRY</div>
+        <button
+          style={styles.presetBtn}
+          title="Set up a close-in dogfight scenario: 1.5nm, 350kts, head-on merge, 15000ft"
+          onClick={() => setScenario({
+            rangeNm: 1.5,
+            shooterSpeed: 350,
+            targetSpeed: 350,
+            shooterAlt: 15000,
+            targetAlt: 15000,
+            shooterHeading: 0,
+            targetHeading: 180,
+            aspectAngleDeg: 0,
+          })}
+        >
+          DOGFIGHT PRESET
+        </button>
         {label(`Range: ${rangeNm.toFixed(1)} nm`, 'Initial range between shooter and target at launch')}
         <input type="range" min={0.5} max={80} step={0.5} value={rangeNm}
           onChange={(e) => setScenario({ rangeNm: +e.target.value })}
@@ -283,6 +306,26 @@ export default function SetupPanel() {
               <input type="range" min={0.5} max={10} step={0.5} value={salvoInterval_s}
                 onChange={(e) => setScenario({ salvoInterval_s: +e.target.value })}
                 style={styles.slider} />
+              {/* Per-slot missile selectors for mixed salvo */}
+              {Array.from({ length: salvoCount - 1 }, (_, i) => (
+                <div key={i} style={{ marginTop: 4 }}>
+                  {label(`Slot ${i + 2}`, `Missile type for salvo slot ${i + 2} (null = same as primary)`)}
+                  <select
+                    style={styles.select}
+                    value={salvoMissileIds[i] ?? 'same'}
+                    onChange={(e) => {
+                      const newIds = [...salvoMissileIds];
+                      newIds[i] = e.target.value === 'same' ? null : e.target.value;
+                      setScenario({ salvoMissileIds: newIds });
+                    }}
+                  >
+                    <option value="same">Same as primary</option>
+                    {availableMissiles.map((ms) => (
+                      <option key={ms.id} value={ms.id}>{ms.name}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
             </>
           )}
         </div>
@@ -407,6 +450,20 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%',
     accentColor: T.accent,
     margin: '2px 0',
+  },
+  presetBtn: {
+    width: '100%',
+    background: T.bgRaised,
+    border: `1px solid ${T.accent}`,
+    color: T.accentBright,
+    fontFamily: T.fontUI,
+    fontSize: 10,
+    fontWeight: '600' as const,
+    padding: '4px 6px',
+    marginBottom: 6,
+    borderRadius: 3,
+    cursor: 'pointer',
+    letterSpacing: 0.5,
   },
   select: {
     width: '100%',

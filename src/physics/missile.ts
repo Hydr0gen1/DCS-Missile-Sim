@@ -16,6 +16,8 @@ export interface MissileState {
   trail: Array<{ x: number; y: number; alt: number }>;
   /** Instantaneous commanded G-load (guidance + gravity bias) for live telemetry */
   gLoad?: number;
+  /** Time when IR seeker lost the target (used for imaging seeker grace period) */
+  _seekerLostTime?: number;
 }
 
 export interface MissingFields {

@@ -18,7 +18,7 @@ export default function PlaybackBar() {
     targetManeuver, targetChaffCount, targetFlareCount, targetWaypoints,
     targetHasMaws, targetReactOnDetect,
     rangeNm, aspectAngleDeg, selectedMissileId,
-    shooterManeuver, salvoCount, salvoInterval_s, lockTime_s, manualLoftAngle_deg,
+    shooterManeuver, salvoCount, salvoInterval_s, lockTime_s, manualLoftAngle_deg, salvoMissileIds,
     simFrames, currentFrameIdx, simStatus, simResult,
     playbackSpeed, isPlaying,
     setSimFrames, setSimError, setCurrentFrameIdx, setIsPlaying,
@@ -98,6 +98,11 @@ export default function PlaybackBar() {
       salvoInterval_s,
       lockTime_s,
       manualLoftAngle_deg,
+      salvoMissiles: salvoMissileIds.map((id) => {
+        if (!id) return null;
+        const raw = missiles.find((ms) => ms.id === id) ?? null;
+        return raw ? fillMissingFields(raw) : null;
+      }),
     };
 
     const err = validateScenario(cfg);

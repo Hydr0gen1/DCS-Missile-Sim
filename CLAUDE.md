@@ -284,6 +284,12 @@ Both the missile AND the target move during each 0.05 s tick. At Mach 6 combined
 - **Pre-launch lock required**: IR missiles (`m.type === 'IR'`) cannot be fired if the target is beyond `seekerAcquisitionRange_nm`. `runSimulation()` returns a "cannot launch" result with `verdict: "Cannot launch — target beyond X seeker range"` before any simulation frames are generated.
 - **Immediate activation at launch**: IR seekers are locked before firing (pilot hears tone before pressing pickle). The seeker is set `active = true` on the first simulation tick — no range-gate delay unlike ARH.
 - **Lock loss if target outruns seeker**: If the target exceeds `1.5 × seekerAcquisitionRange_nm` during flight, the missile loses lock, `active` is set to `false`, and the missile goes ballistic (treated as seduced, `seductionEndTime = t + 9999` — no reacquire). This models IR seekers being outrun by targets going cold and fast.
+- **Gimbal limit (FOV check)**: Per-frame, the angle between the missile velocity vector and the LOS to the target is computed. If `offBoresightRad > seekerSpec.gimbalLimit_rad`, the seeker loses lock:
+  - Standard seekers (AIM-9M ±45°, R-73 ±75°): immediate lock loss → missile goes ballistic
+  - Imaging seekers (AIM-9X ±90°): 1.5s grace period before lock breaks; can re-acquire if target returns to FOV
+  - `_seekerLostTime` in `MissileState` tracks the time the target first left the FOV
+  - `cmSeduced` distinguishes CM-caused seduction from gimbal loss (prevents re-acquire clearing CM seduction)
+  - IR gimbal values in `MissileData.seekerSpec.gimbalLimit_rad`: AIM-9M=0.79, R-73=1.31, AIM-9X=1.57
 
 ### 6. Guidance Control Delay
 
@@ -324,6 +330,21 @@ Ground-launched SAMs:
 | crank | 3G | 50° off missile bearing |
 | bunt | — | Dive 250 ft/s (dead code for speed boost removed) |
 
+**Dogfight maneuvers** (relative to opponent aircraft, not missile; require `opponentState` param):
+
+| Maneuver | G Load | Behavior |
+|----------|--------|----------|
+| pursuit | 7G | Turn toward opponent's 6 o'clock (offensive tracking) |
+| scissors | 9G | Alternating 80° reversals every 3s to force overshoot |
+| barrel_roll | 5G | Same as scissors (rolling variant) |
+| break_into | 9G | Hard turn directly toward opponent (removes angle advantage) |
+| extend | 2G | Fly away from opponent at low turn rate (disengage) |
+
+`stepAircraft()` accepts `opponentState?: AircraftState`. Dogfight maneuvers use opponent heading/position to steer; BVR maneuvers use missile bearing. Target always gets `shooterState` as opponent.
+
+**`AircraftState.trail`**: Array of `{x, y, alt}` positions, max 500 points (shift on overflow). Populated in `stepAircraft()` return. Used for 3D path trail rendering.
+**`AircraftState.timeFlight`**: Elapsed sim time (s) used by scissors for phase alternation timing.
+
 Minimum altitude floor: 500 ft AGL (increased from 200 ft to prevent unrealistic terrain-skimming)
 
 ### 9. Shooter Post-Launch Maneuvers (shooterManeuver.ts)
@@ -352,6 +373,7 @@ Minimum altitude floor: 500 ft AGL (increased from 200 ft to prevent unrealistic
 - `SimFrame.missile` is a backward-compat alias for `missiles[0]`
 - Secondary missiles share target state with lead but have independent kinematics/seekers
 - CM dispensing is gated on lead missile only (target defends against closest threat)
+- **Mixed salvo**: `ScenarioConfig.salvoMissiles` (index 0 = slot 2) overrides per-slot missile; `simStore.salvoMissileIds` holds the UI selection (null = same as primary). Each slot derives all physics parameters (thrust, drag, Cx, burn time, gLimit, seeker range, PN schedule, loft, control delay) independently from `slot.missile`.
 
 ### 11. CM Visual Objects (types.ts → CMObject, engagement.ts → activeCMObjects)
 
@@ -443,6 +465,9 @@ function computeRWR(
 - **CPA hit detection**: segment-vs-segment across all three coordinates — both missile and target move during the tick.
 - **3D view** (`TacticalDisplay3D.tsx`): reads actual `altFt` from every `SimFrame` and renders with `worldTo3D(x, y, altFt)` → correct `[east, altitude, −north]` in Three.js space.
 - **Entity sizes**: aircraft sphere 150m, ground launcher box 200×150×200m, missile cone 60×200m (16 radial segments = smooth), CM box 30×30×30m.
+- **Aircraft velocity indicators**: each `AircraftEntity` in `TacticalDisplay3D.tsx` renders a `<Line>` from the aircraft's current 3D position to a point 2.5 s of travel ahead (`len = speed × 2.5`), same color as the aircraft sphere. Requires `vx/vy/vz` props; suppressed when speed < 10 m/s.
+- **Aircraft path trails**: `AircraftState.trail: Array<{x, y, alt}>` (max 500 pts, shift on overflow) populated in `stepAircraft()` return. Both shooter and target trails rendered as cyan / magenta `<Line>` in the 3D scene via `shooterTrailPts` / `targetTrailPts` memos. Trail points use per-point altitude (not current frame altitude).
+- **Secondary missile trails**: `frame.missiles[]` is iterated; lead missile trail rendered at `#ff8800` / 2.5px, secondary missiles at `#cc6600` / 1.8px.
 - **Aircraft altitude maneuvers**: notch descends at 100 ft/s (`vzMs = −30.5 m/s`), bunt at 250 ft/s (`vzMs = −76.2 m/s`). These are passed as `tvz` to the guidance law.
 
 ### What was cosmetic (upgraded as of this session)

@@ -69,6 +69,8 @@ interface SimStore {
   lockTime_s: number;
   /** Manual loft angle override in degrees (undefined = use missile default) */
   manualLoftAngle_deg?: number;
+  /** Missile IDs for salvo slots 2-4 (null = same as primary) */
+  salvoMissileIds: (string | null)[];
 
   // Playback
   simFrames: SimFrame[];
@@ -152,6 +154,7 @@ export const useSimStore = create<SimStore>((set) => ({
   salvoInterval_s: 2,
   lockTime_s: 4.0,
   manualLoftAngle_deg: undefined,
+  salvoMissileIds: [null, null, null],
 
   simFrames: [],
   currentFrameIdx: 0,

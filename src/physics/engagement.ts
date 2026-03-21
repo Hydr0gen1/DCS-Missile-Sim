@@ -120,6 +120,8 @@ export interface ScenarioConfig {
   lockTime_s?: number;
   /** Manual loft angle override in degrees. Overrides the missile's built-in loft angle. 0 = flat trajectory. */
   manualLoftAngle_deg?: number;
+  /** Missile types for salvo slots 2-4. null = use primary missile. */
+  salvoMissiles?: (MissileData | null)[];
 }
 
 export interface EngagementResult {
@@ -423,6 +425,7 @@ export function runSimulation(cfg: ScenarioConfig): {
   // Seduction state
   let seduced = false;
   let seductionEndTime = 0;
+  let cmSeduced = false; // true = seduction caused by CM (flare/chaff), vs gimbal loss
   // Last known target position (missile flies to this when seduced)
   let lastKnownTargetX = targetX;
   let lastKnownTargetY = targetY;
@@ -478,6 +481,7 @@ export function runSimulation(cfg: ScenarioConfig): {
     lastKnownY: number;
     activeRecorded: boolean;
     done: boolean;
+    missile: MissileData;     // per-slot missile data (may differ from primary)
   }
 
   const salvoCount = Math.max(1, Math.min(4, cfg.salvoCount ?? 1));
@@ -488,6 +492,8 @@ export function runSimulation(cfg: ScenarioConfig): {
     const preLaunchState = createMissileState(
       shooterX, shooterY, initialHeadingDeg, shooterSpeedMs, cfg.shooterAlt,
     );
+    // Use per-slot missile if provided, otherwise fall back to primary
+    const slotMissile = cfg.salvoMissiles?.[i - 1] ?? m;
     secondarySlots.push({
       launchTime: i * salvoInterval,
       state: { ...preLaunchState, motorBurning: false, active: false },
@@ -498,6 +504,7 @@ export function runSimulation(cfg: ScenarioConfig): {
       lastKnownY: targetY,
       activeRecorded: false,
       done: false,
+      missile: slotMissile,
     });
   }
 
@@ -615,12 +622,14 @@ export function runSimulation(cfg: ScenarioConfig): {
     }
 
     // --- Step target aircraft (with threat-gated maneuvering + energy model) ---
+    // Pass shooter as opponent so dogfight maneuvers (pursuit, scissors, etc.) can reference it
     const newTarget = stepAircraft(
       targetState, DT,
       missileState.x, missileState.y,
       targetShouldManeuver,
       !reactOnDetect || threatDetectedByTarget,
       cfg.targetAircraftData,
+      shooterState,
     );
 
     // Track last known target position when seeker is active
@@ -677,6 +686,7 @@ export function runSimulation(cfg: ScenarioConfig): {
 
         if (roll < pSeduced) {
           seduced = true;
+          cmSeduced = true;
           seductionEndTime = time + 2.0 + nextRng() * 2.0;
           cmEventThisFrame = { type: 'flare_seduced', probability: pSeduced, cm: 'flare' };
           seductionEvents.push(cmEventThisFrame);
@@ -707,6 +717,7 @@ export function runSimulation(cfg: ScenarioConfig): {
 
         if (roll < pSeduced) {
           seduced = true;
+          cmSeduced = true;
           seductionEndTime = time + 1.5 + nextRng() * 2.5;
           cmEventThisFrame = { type: 'chaff_seduced', probability: pSeduced, cm: 'chaff' };
           seductionEvents.push(cmEventThisFrame);
@@ -797,6 +808,67 @@ export function runSimulation(cfg: ScenarioConfig): {
         missReason = 'insufficient maneuverability';
       }
     }
+    // ── IR seeker gimbal check: target must stay within seeker FOV ───────────
+    // If the target maneuvers outside the gimbal cone, the seeker loses lock.
+    // AIM-9M: ±45° (0.79 rad)  — immediate loss, no re-acquire
+    // R-73:   ±75° (1.31 rad)  — immediate loss, no re-acquire
+    // AIM-9X: ±90° (1.57 rad)  — imaging seeker: 1.5s grace, can re-acquire
+    if (missileState.active && m.type === 'IR' && !seduced) {
+      const gimbalLimitRad = m.seekerSpec?.gimbalLimit_rad ?? 0.79;
+      const hasImagingSeeker = gimbalLimitRad >= 1.4;
+      const gSpd = missileState.speedMs; // use last-tick speed (speed3D computed below)
+      if (gSpd > 10) {
+        const losX = newTarget.x - missileState.x;
+        const losY = newTarget.y - missileState.y;
+        const losZ = (newTarget.altFt - missileState.altFt) * FT_TO_M;
+        const losR = Math.sqrt(losX * losX + losY * losY + losZ * losZ);
+        if (losR > 1) {
+          const dot3 = (missileState.vx * losX + missileState.vy * losY + missileState.vz * losZ) / (gSpd * losR);
+          const offBoresightRad = Math.acos(Math.max(-1, Math.min(1, dot3)));
+          if (offBoresightRad > gimbalLimitRad) {
+            if (hasImagingSeeker) {
+              if (!missileState._seekerLostTime) {
+                missileState = { ...missileState, _seekerLostTime: time };
+              } else if (time - missileState._seekerLostTime > 1.5) {
+                // Imaging seeker — lost for >1.5s, break lock
+                missileState = { ...missileState, active: false, _seekerLostTime: undefined };
+                if (!cmSeduced) {
+                  seduced = true;
+                  seductionEndTime = time + 9999;
+                  lastKnownTargetX = newTarget.x;
+                  lastKnownTargetY = newTarget.y;
+                  detectionTimeline.push({ time, type: 'launch',
+                    description: `${m.name} seeker lost lock — outside ${(gimbalLimitRad * 180 / Math.PI).toFixed(0)}° gimbal for >1.5s` });
+                }
+              }
+            } else {
+              // Standard seeker: immediate lock loss
+              missileState = { ...missileState, active: false, _seekerLostTime: undefined };
+              if (!cmSeduced) {
+                seduced = true;
+                seductionEndTime = time + 9999;
+                lastKnownTargetX = newTarget.x;
+                lastKnownTargetY = newTarget.y;
+                detectionTimeline.push({ time, type: 'launch',
+                  description: `${m.name} seeker lost lock — target outside ${(gimbalLimitRad * 180 / Math.PI).toFixed(0)}° gimbal` });
+              }
+            }
+          } else {
+            // Target is back in FOV — reset grace timer; re-acquire if imaging seeker
+            if (hasImagingSeeker && missileState._seekerLostTime) {
+              missileState = { ...missileState, _seekerLostTime: undefined };
+              if (seduced && !cmSeduced) {
+                seduced = false;
+                missileState = { ...missileState, active: true };
+                detectionTimeline.push({ time, type: 'missile_active',
+                  description: `${m.name} imaging seeker re-acquired target` });
+              }
+            }
+          }
+        }
+      }
+    }
+
     // Gravity bias: autopilot always cancels gravity in the vertical channel.
     // Combined with the -G in the integrator, net vertical force is zero at baseline.
     // PN then provides corrections relative to this level-flight reference.
@@ -991,15 +1063,41 @@ export function runSimulation(cfg: ScenarioConfig): {
       if (time >= slot.launchTime) {
         slot.tFlight += DT;
         const sFlight = slot.tFlight;
+        const sm = slot.missile; // per-slot missile data
+
+        // Per-slot physics parameters (derived from sm, not primary m)
+        const sUseMultiPhase = (sm.propulsion?.phases?.length ?? 0) > 0 &&
+          sm.propulsion!.phases!.every((p) => p.thrust_N != null && p.duration_s != null);
+        const sBurnTime = sUseMultiPhase
+          ? (sm.propulsion!.totalBurnTime_s ?? sm.motorBurnTime_s!)
+          : sm.motorBurnTime_s!;
+        const sMass = sm.mass_kg!;
+        const sMassBurnout = sm.massBurnout_kg ?? (sm.propulsion?.massAtBurnout_kg ?? sMass * 0.7);
+        const sThrust = sm.thrust_N!;
+        const sCxModel = sm.aerodynamics?.Cx ?? null;
+        const sCd = sm.dragCoefficient!;
+        const sArea = sm.referenceArea_m2!;
+        const sGLimit = sm.gLimit ?? 40;
+        const sPnSchedule = sm.guidance?.pn_schedule ?? null;
+        const sNavN = sm.guidanceNav ?? 4;
+        const sSeekerRangeM = (sm.seekerAcquisitionRange_nm ?? 10) * NM_TO_M;
+        const sLoftAngle = cfg.manualLoftAngle_deg ?? sm.loft?.elevationDeg ?? sm.loftAngle_deg ?? 0;
+        const sControlDelay = Math.min(sm.guidance?.controlDelay_s ?? sm.guidance?.autopilot?.delay_s ?? 0, 2.0);
+        const sLoftTriggerM = sm.loft?.triggerRange_m ?? null;
+        const sLoftDescentM = sm.loft?.descentRange_m ?? null;
+        const sRmax = sm.maxRange_nm ? sm.maxRange_nm * NM_TO_M : maxRangeM;
+        const sEffectiveTriggerM = sLoftTriggerM ?? (sLoftAngle > 0 ? sRmax * 0.5 : 0);
+        const sEffectiveDescentM = sLoftDescentM ?? (sLoftAngle > 0 ? sRmax * 0.25 : 0);
 
         // Seeker activation
         const sdx = newTarget.x - slot.state.x;
         const sdy = newTarget.y - slot.state.y;
         const sRange = Math.sqrt(sdx * sdx + sdy * sdy);
-        if (!slot.state.active && (m.type === 'ARH' || m.type === 'IR') && sRange <= seekerRangeM) {
+        const sIrReadyToActivate = !sm.hasDatalink || sRange <= sSeekerRangeM;
+        if (!slot.state.active && (sm.type === 'ARH' || (sm.type === 'IR' && sIrReadyToActivate)) && sRange <= sSeekerRangeM) {
           slot.state = { ...slot.state, active: true };
         }
-        if (m.type === 'SARH' && !slot.state.active) {
+        if (sm.type === 'SARH' && !slot.state.active) {
           slot.state = { ...slot.state, active: true };
         }
 
@@ -1009,20 +1107,20 @@ export function runSimulation(cfg: ScenarioConfig): {
         }
 
         // Re-acquisition
-        if (slot.seduced && time >= slot.seductionEndTime && sRange <= seekerRangeM * 1.5) {
+        if (slot.seduced && time >= slot.seductionEndTime && sRange <= sSeekerRangeM * 1.5) {
           slot.seduced = false;
         }
 
-        const sBurning = sFlight < burnTime;
+        const sBurning = sFlight < sBurnTime;
         let sCurrentMass: number;
         let sThrustForce: number;
-        if (useMultiPhase) {
-          const [thr, mss] = getThrustAndMass(sFlight, propPhases, mass);
+        if (sUseMultiPhase) {
+          const [thr, mss] = getThrustAndMass(sFlight, sm.propulsion!.phases!, sMass);
           sThrustForce = thr;
           sCurrentMass = mss;
         } else {
-          sCurrentMass = sBurning ? mass - (mass - massBurnout) * (sFlight / burnTime) : massBurnout;
-          sThrustForce = sBurning ? thrust : 0;
+          sCurrentMass = sBurning ? sMass - (sMass - sMassBurnout) * (sFlight / sBurnTime) : sMassBurnout;
+          sThrustForce = sBurning ? sThrust : 0;
         }
 
         const sMz = slot.state.altFt * FT_TO_M;
@@ -1032,8 +1130,8 @@ export function runSimulation(cfg: ScenarioConfig): {
         const sHorizDist = Math.hypot(sGuidX - slot.state.x, sGuidY - slot.state.y);
         const sTzGuide = computeLoftAltitude(
           sMz, sTz, sHorizDist,
-          loftAngle, effectiveTriggerM, effectiveDescentM,
-          slot.seduced, isGroundLaunched, sFlight < burnTime, burnTime > 0 ? sFlight / burnTime : 1,
+          sLoftAngle, sEffectiveTriggerM, sEffectiveDescentM,
+          slot.seduced, isGroundLaunched, sFlight < sBurnTime, sBurnTime > 0 ? sFlight / sBurnTime : 1,
         );
 
         const sGuidOut = proportionalNav({
@@ -1043,21 +1141,42 @@ export function runSimulation(cfg: ScenarioConfig): {
           tvx: slot.seduced ? 0 : newTarget.vx,
           tvy: slot.seduced ? 0 : newTarget.vy,
           tvz: slot.seduced ? 0 : (newTarget.vzMs ?? 0),
-          navConst: getPNGain(sRange, pnSchedule, navN),
+          navConst: getPNGain(sRange, sPnSchedule, sNavN),
         });
 
         let sAx: number, sAy: number, sAz: number;
-        if (sFlight < controlDelay) {
+        if (sFlight < sControlDelay) {
           sAx = 0; sAy = 0; sAz = 0; // no PN during fins-locked phase
         } else {
-          ({ ax: sAx, ay: sAy, az: sAz } = clampAcceleration(sGuidOut.ax, sGuidOut.ay, sGuidOut.az, gLimit, slot.state.speedMs));
+          ({ ax: sAx, ay: sAy, az: sAz } = clampAcceleration(sGuidOut.ax, sGuidOut.ay, sGuidOut.az, sGLimit, slot.state.speedMs));
         }
         sAz += G; // gravity bias: universal gravity compensation for all phases
 
+        // IR gimbal check for secondary missiles
+        if (slot.state.active && sm.type === 'IR') {
+          const sGimbalLimitRad = sm.seekerSpec?.gimbalLimit_rad ?? 0.79;
+          const sSpeed3Dg = Math.sqrt(slot.state.vx ** 2 + slot.state.vy ** 2 + slot.state.vz ** 2);
+          if (sSpeed3Dg > 10) {
+            const sLosX = newTarget.x - slot.state.x;
+            const sLosY = newTarget.y - slot.state.y;
+            const sLosZ = (newTarget.altFt - slot.state.altFt) * FT_TO_M;
+            const sLosR = Math.sqrt(sLosX * sLosX + sLosY * sLosY + sLosZ * sLosZ);
+            if (sLosR > 1) {
+              const sDot = (slot.state.vx * sLosX + slot.state.vy * sLosY + slot.state.vz * sLosZ) / (sSpeed3Dg * sLosR);
+              const sObs = Math.acos(Math.max(-1, Math.min(1, sDot)));
+              if (sObs > sGimbalLimitRad && !slot.seduced) {
+                slot.state = { ...slot.state, active: false };
+                slot.seduced = true;
+                slot.seductionEndTime = time + 9999;
+              }
+            }
+          }
+        }
+
         const sSpeed3D = Math.sqrt(slot.state.vx ** 2 + slot.state.vy ** 2 + slot.state.vz ** 2);
         const sMach = sSpeed3D / speedOfSound(slot.state.altFt);
-        const sECd = cxModel ? getCxDCS(sMach, cxModel) : cd * machDragMultiplierFallback(sMach);
-        const sFDrag = dragForce(sSpeed3D, slot.state.altFt, sECd, area);
+        const sECd = sCxModel ? getCxDCS(sMach, sCxModel) : sCd * machDragMultiplierFallback(sMach);
+        const sFDrag = dragForce(sSpeed3D, slot.state.altFt, sECd, sArea);
         const sInvMass = 1 / sCurrentMass;
         const sSafe = Math.max(sSpeed3D, 0.001);
         const sTAx = sThrustForce * sInvMass * (slot.state.vx / sSafe);
@@ -1092,7 +1211,8 @@ export function runSimulation(cfg: ScenarioConfig): {
         const sTrail = [...slot.state.trail, { x: slot.state.x, y: slot.state.y, alt: slot.state.altFt }];
         if (sTrail.length > 500) sTrail.shift();
 
-        const sEnergyFrac = Math.min(1, sNewSpeed / maxSpeedMs);
+        const sMaxSpeedMs = sm.maxSpeed_mach ? sm.maxSpeed_mach * speedOfSound(sNewAlt) : 1500;
+        const sEnergyFrac = Math.min(1, sNewSpeed / sMaxSpeedMs);
         slot.state = {
           ...slot.state,
           x: sNewMx, y: sNewMy, vx: sNewVx, vy: sNewVy, vz: sNewVz,

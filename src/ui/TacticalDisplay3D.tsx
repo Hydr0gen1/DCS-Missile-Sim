@@ -33,14 +33,38 @@ function circlePoints(cx: number, cz: number, r: number, y: number, segments = 8
 
 // ─── Aircraft dot ────────────────────────────────────────────────────────────
 
-function AircraftEntity({ pos, color }: { pos: [number, number, number]; color: string }) {
+function AircraftEntity({ pos, color, vx, vy, vz }: {
+  pos: [number, number, number]; color: string;
+  vx?: number; vy?: number; vz?: number;
+}) {
   const meshRef = useRef<THREE.Mesh>(null);
   useFrame(() => { if (meshRef.current) meshRef.current.position.set(...pos); });
+
+  // Velocity indicator line: 2.5 seconds of travel in world→3D coords
+  const velLine = useMemo<[number, number, number][] | null>(() => {
+    if (vx == null || vy == null) return null;
+    const speed = Math.sqrt(vx * vx + vy * vy + (vz ?? 0) * (vz ?? 0));
+    if (speed < 10) return null;
+    const len = speed * 2.5;
+    const dx = (vx / speed) * len;
+    const dy = (vy / speed) * len;
+    const dz = ((vz ?? 0) / speed) * len;
+    return [
+      pos,
+      [pos[0] + dx, pos[1] + dz, pos[2] - dy],
+    ];
+  }, [pos, vx, vy, vz]);
+
   return (
-    <mesh ref={meshRef}>
-      <sphereGeometry args={[150, 12, 12]} />
-      <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.5} />
-    </mesh>
+    <>
+      <mesh ref={meshRef}>
+        <sphereGeometry args={[150, 12, 12]} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.5} />
+      </mesh>
+      {velLine && (
+        <Line points={velLine} color={color} lineWidth={1.5} />
+      )}
+    </>
   );
 }
 
@@ -229,11 +253,26 @@ function SceneContent() {
   const targetPos  = worldTo3D(tx, ty, targetAlt);
   const missilePos = worldTo3D(mx, my, missileAlt);
 
-  // Missile trail with altitude-aware points (lead missile)
-  const trailPoints: [number, number, number][] = useMemo(() => {
-    const lead = frame?.missiles?.[0] ?? frame?.missile;
-    if (!lead || lead.trail.length < 2) return [];
-    return lead.trail.map(({ x, y, alt }) => worldTo3D(x, y, alt));
+  // All missile trails (lead + salvo secondaries)
+  const allTrails: [number, number, number][][] = useMemo(() => {
+    const msls = frame?.missiles ?? (frame?.missile ? [frame.missile] : []);
+    return msls.map((msl) => {
+      if (!msl || msl.trail.length < 2) return [];
+      return msl.trail.map(({ x, y, alt }) => worldTo3D(x, y, alt));
+    });
+  }, [frame]);
+
+  // Aircraft path trails
+  const shooterTrailPts = useMemo<[number, number, number][]>(() => {
+    const t = frame?.shooter?.trail;
+    if (!t || t.length < 2) return [];
+    return t.map(({ x, y, alt }) => worldTo3D(x, y, alt));
+  }, [frame]);
+
+  const targetTrailPts = useMemo<[number, number, number][]>(() => {
+    const t = frame?.target?.trail;
+    if (!t || t.length < 2) return [];
+    return t.map(({ x, y, alt }) => worldTo3D(x, y, alt));
   }, [frame]);
 
   // Range rings on ground (centered on target start position)
@@ -295,14 +334,24 @@ function SceneContent() {
       <Line points={targetPole}  color="#ff6644" lineWidth={0.8} />
       {frame && <Line points={missilePole} color="#ff8800" lineWidth={0.6} />}
 
+      {/* Aircraft path trails */}
+      {shooterTrailPts.length >= 2 && (
+        <Line points={shooterTrailPts} color="#0066aa" lineWidth={1.5} transparent opacity={0.6} />
+      )}
+      {targetTrailPts.length >= 2 && (
+        <Line points={targetTrailPts} color="#aa3333" lineWidth={1.5} transparent opacity={0.6} />
+      )}
+
       {/* Shooter */}
       {shooterRole === 'ground'
         ? <GroundLauncherEntity pos={[shooterPos[0], 0, shooterPos[2]]} />
-        : <AircraftEntity pos={shooterPos} color="#00aaff" />
+        : <AircraftEntity pos={shooterPos} color="#00aaff"
+            vx={frame?.shooter.vx} vy={frame?.shooter.vy} vz={frame?.shooter.vzMs} />
       }
 
       {/* Target */}
-      <AircraftEntity pos={targetPos} color="#ff4444" />
+      <AircraftEntity pos={targetPos} color="#ff4444"
+        vx={frame?.target.vx} vy={frame?.target.vy} vz={frame?.target.vzMs} />
 
       {/* Missiles (all salvo) */}
       {frame && (frame.missiles ?? [frame.missile]).map((msl, mi) => {
@@ -313,9 +362,16 @@ function SceneContent() {
         );
       })}
 
-      {/* Missile trail */}
-      {trailPoints.length >= 2 && (
-        <Line points={trailPoints} color="#ff8800" lineWidth={2.5} />
+      {/* Missile trails (lead = bright orange, secondaries = darker) */}
+      {allTrails.map((pts, i) =>
+        pts.length >= 2 && (
+          <Line
+            key={`trail-${i}`}
+            points={pts}
+            color={i === 0 ? '#ff8800' : '#cc6600'}
+            lineWidth={i === 0 ? 2.5 : 1.8}
+          />
+        )
       )}
 
       {/* Countermeasures (flares = yellow, chaff = cyan) */}

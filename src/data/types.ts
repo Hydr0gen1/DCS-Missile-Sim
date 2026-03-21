@@ -128,6 +128,13 @@ export interface MissileData {
   /** Dynamic Launch Zone values (exact DCS HUD data) */
   dlz?: DLZ;
 
+  /** Seeker specification (IR gimbal limits, etc.) */
+  seekerSpec?: {
+    /** Maximum off-boresight angle in radians (half-angle of seeker FOV cone).
+     *  AIM-9M: 0.79 rad (±45°), R-73: 1.31 rad (±75°), AIM-9X: 1.57 rad (±90°) */
+    gimbalLimit_rad?: number;
+  };
+
   /** DCS source metadata */
   dcsName?: string;
   sourceFile?: string;
