@@ -65,6 +65,12 @@ interface SimStore {
   salvoCount: number;
   /** Seconds between missile launches */
   salvoInterval_s: number;
+  /** SAM pre-launch lock time in seconds (ground mode only) */
+  lockTime_s: number;
+  /** Manual loft angle override in degrees (undefined = use missile default) */
+  manualLoftAngle_deg?: number;
+  /** Missile IDs for salvo slots 2-4 (null = same as primary) */
+  salvoMissileIds: (string | null)[];
 
   // Playback
   simFrames: SimFrame[];
@@ -82,6 +88,9 @@ interface SimStore {
 
   // Mode
   appMode: AppMode;
+
+  // RWR audio
+  rwrAudioMuted: boolean;
 
   // Comparison table
   comparisonEntries: ComparisonEntry[];
@@ -114,6 +123,7 @@ interface SimStore {
   addComparisonEntry: (entry: Omit<ComparisonEntry, 'id'>) => void;
   removeComparisonEntry: (id: number) => void;
   clearComparisonEntries: () => void;
+  setRwrAudioMuted: (v: boolean) => void;
 }
 
 export const useSimStore = create<SimStore>((set) => ({
@@ -142,6 +152,9 @@ export const useSimStore = create<SimStore>((set) => ({
   shooterManeuver: 'none',
   salvoCount: 1,
   salvoInterval_s: 2,
+  lockTime_s: 4.0,
+  manualLoftAngle_deg: undefined,
+  salvoMissileIds: [null, null, null],
 
   simFrames: [],
   currentFrameIdx: 0,
@@ -157,6 +170,7 @@ export const useSimStore = create<SimStore>((set) => ({
   shooterStartY: 0,
 
   appMode: 'tactical',
+  rwrAudioMuted: false,
   comparisonEntries: [],
   comparisonNextId: 1,
 
@@ -197,7 +211,7 @@ export const useSimStore = create<SimStore>((set) => ({
       simError: null,
       isPlaying: false,
     }),
-  setShooterRole: (role) => set({ shooterRole: role, ...(role === 'ground' ? { shooterSpeed: 0 } : {}) }),
+  setShooterRole: (role) => set({ shooterRole: role, ...(role === 'ground' ? { shooterSpeed: 0, shooterAlt: 0 } : {}) }),
   addMissile: (m) => set((s) => ({ missiles: [...s.missiles, m] })),
   deleteMissile: (id) =>
     set((s) => ({
@@ -219,4 +233,5 @@ export const useSimStore = create<SimStore>((set) => ({
   removeComparisonEntry: (id) =>
     set((s) => ({ comparisonEntries: s.comparisonEntries.filter((e) => e.id !== id) })),
   clearComparisonEntries: () => set({ comparisonEntries: [] }),
+  setRwrAudioMuted: (v) => set({ rwrAudioMuted: v }),
 }));

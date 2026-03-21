@@ -1,8 +1,9 @@
+import { useEffect } from 'react';
 import { useSimStore } from '../store/simStore';
 import type { ShooterRole } from '../store/simStore';
 import type { ManeuverType } from '../physics/aircraft';
 import type { ShooterManeuverType } from '../data/types';
-import { getMissingFields } from '../physics/missile';
+import { getMissingFields, fillMissingFields } from '../physics/missile';
 import { T } from './theme';
 
 const label = (text: string, tip: string) => (
@@ -19,12 +20,44 @@ export default function SetupPanel() {
     targetManeuver, targetChaffCount, targetFlareCount, targetReactOnDetect,
     rangeNm, aspectAngleDeg, selectedMissileId,
     shooterManeuver, salvoCount, salvoInterval_s,
+    lockTime_s, manualLoftAngle_deg, salvoMissileIds,
     setScenario,
   } = store;
 
+  const shooterAircraft = aircraft.find((a) => a.id === shooterAircraftId);
+
+  // Compute available missiles based on shooter aircraft loadout (ground mode = all)
+  const availableMissiles = (() => {
+    if (shooterRole === 'ground') return missiles;
+    const compat = shooterAircraft?.compatibleMissiles;
+    if (!compat) return missiles; // undefined = no restriction (Generic)
+    return missiles.filter((m) => compat.includes(m.id));
+  })();
+
+  // Auto-select first compatible missile when aircraft changes or role switches
+  useEffect(() => {
+    const ids = availableMissiles.map((m) => m.id);
+    if (!ids.includes(selectedMissileId)) {
+      const first = ids[0];
+      if (first) setScenario({ selectedMissileId: first });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shooterAircraftId, shooterRole]);
+
+  // Group missiles by type for optgroups, sorted alphabetically within group
+  const grouped = {
+    ARH: availableMissiles.filter((m) => m.type === 'ARH').sort((a, b) => a.name.localeCompare(b.name)),
+    SARH: availableMissiles.filter((m) => m.type === 'SARH').sort((a, b) => a.name.localeCompare(b.name)),
+    IR: availableMissiles.filter((m) => m.type === 'IR').sort((a, b) => a.name.localeCompare(b.name)),
+  };
+
   const selectedMissile = missiles.find((m) => m.id === selectedMissileId);
-  const missing = selectedMissile ? getMissingFields(selectedMissile) : [];
+  // Use fillMissingFields so SAMs with rich DCS data don't show spurious warnings
+  const filledMissile = selectedMissile ? fillMissingFields(selectedMissile) : null;
+  const missing = filledMissile ? getMissingFields(filledMissile) : [];
   const canSim = missing.length === 0;
+
+  const loftEnabled = manualLoftAngle_deg !== undefined && manualLoftAngle_deg !== null;
 
   return (
     <div style={styles.panel}>
@@ -76,7 +109,7 @@ export default function SetupPanel() {
         {shooterRole === 'aircraft' && (
           <>
             {label(`Speed: ${shooterSpeed} kts`, 'Shooter true airspeed in knots')}
-            <input type="range" min={100} max={1200} step={10} value={shooterSpeed}
+            <input type="range" min={100} max={1500} step={10} value={shooterSpeed}
               onChange={(e) => setScenario({ shooterSpeed: +e.target.value })}
               style={styles.slider} />
 
@@ -87,23 +120,34 @@ export default function SetupPanel() {
           </>
         )}
         {shooterRole === 'ground' && (
-          <div style={{ color: '#446644', fontSize: 9, marginTop: 3 }}>
-            Speed: 0 kts — Heading: auto-aimed
-          </div>
+          <>
+            <div style={{ color: '#446644', fontSize: 9, marginTop: 3 }}>
+              Speed: 0 kts — Heading: auto-aimed
+            </div>
+            {label(`Lock Time: ${lockTime_s.toFixed(1)} s`, 'Time SAM radar acquires and locks the target before firing — target drifts during this period')}
+            <input type="range" min={0} max={12} step={0.5}
+              value={lockTime_s}
+              onChange={(e) => setScenario({ lockTime_s: +e.target.value })}
+              style={styles.slider} />
+          </>
         )}
 
-        {label('Post-Launch Maneuver', 'Shooter maneuver after missile launch — affects datalink angle and F-pole')}
-        <select
-          style={styles.select}
-          value={shooterManeuver}
-          onChange={(e) => setScenario({ shooterManeuver: e.target.value as ShooterManeuverType })}
-        >
-          <option value="none">None — Straight & Level</option>
-          <option value="crank_left">Crank Left (70° offset, open range)</option>
-          <option value="crank_right">Crank Right (70° offset, open range)</option>
-          <option value="pump">Pump (crank 10s, then recommit)</option>
-          <option value="drag">Drag (go cold, max F-pole)</option>
-        </select>
+        {shooterRole === 'aircraft' && (
+          <>
+            {label('Post-Launch Maneuver', 'Shooter maneuver after missile launch — affects datalink angle and F-pole')}
+            <select
+              style={styles.select}
+              value={shooterManeuver}
+              onChange={(e) => setScenario({ shooterManeuver: e.target.value as ShooterManeuverType })}
+            >
+              <option value="none">None — Straight & Level</option>
+              <option value="crank_left">Crank Left (70° offset, open range)</option>
+              <option value="crank_right">Crank Right (70° offset, open range)</option>
+              <option value="pump">Pump (crank 10s, then recommit)</option>
+              <option value="drag">Drag (go cold, max F-pole)</option>
+            </select>
+          </>
+        )}
       </div>
 
       <div style={styles.section}>
@@ -123,7 +167,7 @@ export default function SetupPanel() {
           style={styles.slider} />
 
         {label(`Speed: ${targetSpeed} kts`, 'Target true airspeed in knots')}
-        <input type="range" min={100} max={1200} step={10} value={targetSpeed}
+        <input type="range" min={100} max={1500} step={10} value={targetSpeed}
           onChange={(e) => setScenario({ targetSpeed: +e.target.value })}
           style={styles.slider} />
 
@@ -144,6 +188,13 @@ export default function SetupPanel() {
           <option value="bunt">Bunt & Drag (Dive + Accel)</option>
           <option value="break">Break Turn (Max-G perp.)</option>
           <option value="custom">Custom Waypoints (click map)</option>
+          <optgroup label="── Dogfight ──────────">
+            <option value="pursuit">Pursuit (turn to shooter's 6)</option>
+            <option value="scissors">Scissors (alternating reversals)</option>
+            <option value="barrel_roll">Barrel Roll (rolling scissors)</option>
+            <option value="break_into">Break Into (hard turn toward shooter)</option>
+            <option value="extend">Extend (disengage, fly away)</option>
+          </optgroup>
         </select>
 
         <label
@@ -190,8 +241,24 @@ export default function SetupPanel() {
 
       <div style={styles.section}>
         <div style={styles.sectionTitle}>GEOMETRY</div>
-        {label(`Range: ${rangeNm} nm`, 'Initial range between shooter and target at launch')}
-        <input type="range" min={1} max={80} step={1} value={rangeNm}
+        <button
+          style={styles.presetBtn}
+          title="Set up a close-in dogfight scenario: 1.5nm, 350kts, head-on merge, 15000ft"
+          onClick={() => setScenario({
+            rangeNm: 1.5,
+            shooterSpeed: 350,
+            targetSpeed: 350,
+            shooterAlt: 15000,
+            targetAlt: 15000,
+            shooterHeading: 0,
+            targetHeading: 180,
+            aspectAngleDeg: 0,
+          })}
+        >
+          DOGFIGHT PRESET
+        </button>
+        {label(`Range: ${rangeNm.toFixed(1)} nm`, 'Initial range between shooter and target at launch')}
+        <input type="range" min={0.5} max={80} step={0.5} value={rangeNm}
           onChange={(e) => setScenario({ rangeNm: +e.target.value })}
           style={styles.slider} />
 
@@ -199,34 +266,102 @@ export default function SetupPanel() {
         <input type="range" min={0} max={180} step={5} value={aspectAngleDeg}
           onChange={(e) => setScenario({ aspectAngleDeg: +e.target.value })}
           style={styles.slider} />
+
+        <label
+          title="Override the missile's built-in loft angle. Enable to manually set loft elevation for the engagement."
+          style={{ ...styles.label, display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, cursor: 'pointer' }}
+        >
+          <input
+            type="checkbox"
+            checked={loftEnabled}
+            onChange={(e) => setScenario({ manualLoftAngle_deg: e.target.checked ? (selectedMissile?.loftAngle_deg ?? 10) : undefined })}
+            style={{ accentColor: T.accent }}
+          />
+          Manual Loft Angle
+        </label>
+        {loftEnabled && (
+          <>
+            {label(`Loft: ${(manualLoftAngle_deg ?? 0).toFixed(0)}°`, 'Loft angle in degrees above horizontal — 0° = no loft, higher = more altitude gain')}
+            <input type="range" min={0} max={30} step={1}
+              value={manualLoftAngle_deg ?? 0}
+              onChange={(e) => setScenario({ manualLoftAngle_deg: +e.target.value })}
+              style={styles.slider} />
+          </>
+        )}
       </div>
 
       <div style={styles.section}>
         <div style={styles.sectionTitle}>MISSILE</div>
-        {label(`Salvo: ${salvoCount} missile${salvoCount > 1 ? 's' : ''}`, 'Number of missiles launched in salvo (1-4)')}
-        <input type="range" min={1} max={4} step={1} value={salvoCount}
-          onChange={(e) => setScenario({ salvoCount: +e.target.value })}
-          style={styles.slider} />
 
-        {salvoCount > 1 && (
-          <>
-            {label(`Interval: ${salvoInterval_s.toFixed(1)} s`, 'Time between missile launches')}
-            <input type="range" min={0.5} max={10} step={0.5} value={salvoInterval_s}
-              onChange={(e) => setScenario({ salvoInterval_s: +e.target.value })}
-              style={styles.slider} />
-          </>
-        )}
+        {/* Salvo sub-box */}
+        <div style={styles.salvoBox}>
+          <div style={styles.cmTitle}>SALVO</div>
+          {label(`Count: ${salvoCount} missile${salvoCount > 1 ? 's' : ''}`, 'Number of missiles launched in salvo (1-4)')}
+          <input type="range" min={1} max={4} step={1} value={salvoCount}
+            onChange={(e) => setScenario({ salvoCount: +e.target.value })}
+            style={styles.slider} />
+          {salvoCount > 1 && (
+            <>
+              {label(`Interval: ${salvoInterval_s.toFixed(1)} s`, 'Time between missile launches')}
+              <input type="range" min={0.5} max={10} step={0.5} value={salvoInterval_s}
+                onChange={(e) => setScenario({ salvoInterval_s: +e.target.value })}
+                style={styles.slider} />
+              {/* Per-slot missile selectors for mixed salvo */}
+              {Array.from({ length: salvoCount - 1 }, (_, i) => (
+                <div key={i} style={{ marginTop: 4 }}>
+                  {label(`Slot ${i + 2}`, `Missile type for salvo slot ${i + 2} (null = same as primary)`)}
+                  <select
+                    style={styles.select}
+                    value={salvoMissileIds[i] ?? 'same'}
+                    onChange={(e) => {
+                      const newIds = [...salvoMissileIds];
+                      newIds[i] = e.target.value === 'same' ? null : e.target.value;
+                      setScenario({ salvoMissileIds: newIds });
+                    }}
+                  >
+                    <option value="same">Same as primary</option>
+                    {availableMissiles.map((ms) => (
+                      <option key={ms.id} value={ms.id}>{ms.name}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
 
         <select
           style={styles.select}
           value={selectedMissileId}
           onChange={(e) => setScenario({ selectedMissileId: e.target.value })}
         >
-          {missiles.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}{m.isSynthetic ? ' [SYNTHETIC]' : ''}{getMissingFields(m).length > 0 ? ' ⚠' : ''}
-            </option>
-          ))}
+          {grouped.ARH.length > 0 && (
+            <optgroup label="ARH — Active Radar">
+              {grouped.ARH.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}{m.isSynthetic ? ' [SYNTHETIC]' : ''}{getMissingFields(m).length > 0 ? ' ⚠' : ''}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {grouped.SARH.length > 0 && (
+            <optgroup label="SARH — Semi-Active Radar">
+              {grouped.SARH.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}{m.isSynthetic ? ' [SYNTHETIC]' : ''}{getMissingFields(m).length > 0 ? ' ⚠' : ''}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {grouped.IR.length > 0 && (
+            <optgroup label="IR — Infrared">
+              {grouped.IR.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}{m.isSynthetic ? ' [SYNTHETIC]' : ''}{getMissingFields(m).length > 0 ? ' ⚠' : ''}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
 
         {selectedMissile?.isSynthetic && (
@@ -316,6 +451,20 @@ const styles: Record<string, React.CSSProperties> = {
     accentColor: T.accent,
     margin: '2px 0',
   },
+  presetBtn: {
+    width: '100%',
+    background: T.bgRaised,
+    border: `1px solid ${T.accent}`,
+    color: T.accentBright,
+    fontFamily: T.fontUI,
+    fontSize: 10,
+    fontWeight: '600' as const,
+    padding: '4px 6px',
+    marginBottom: 6,
+    borderRadius: 3,
+    cursor: 'pointer',
+    letterSpacing: 0.5,
+  },
   select: {
     width: '100%',
     background: T.bgRaised,
@@ -376,6 +525,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   cmBox: {
     marginTop: 8,
+    padding: '6px 8px',
+    border: `1px solid ${T.borderDim}`,
+    background: T.bgBase,
+    borderRadius: 4,
+  },
+  salvoBox: {
+    marginBottom: 8,
     padding: '6px 8px',
     border: `1px solid ${T.borderDim}`,
     background: T.bgBase,

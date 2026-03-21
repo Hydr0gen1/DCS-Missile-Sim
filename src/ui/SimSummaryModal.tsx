@@ -69,6 +69,15 @@ export default function SimSummaryModal({ onClose }: Props) {
           )}
         </div>
 
+        {/* Exit speeds */}
+        <div style={styles.divider} />
+        <div style={styles.sectionHeader}>EXIT CONDITIONS</div>
+        <div style={styles.section}>
+          <Row label="A-Pole" value={`${r.aPoleNm.toFixed(1)} nm`} dim />
+          <Row label="Target Exit Speed" value={`${r.targetExitSpeedKts.toFixed(0)} kts`} />
+          <Row label="Shooter Exit Speed" value={`${r.shooterExitSpeedKts.toFixed(0)} kts`} />
+        </div>
+
         {/* Countermeasures — only show if any were used */}
         {(r.chaffSalvosUsed > 0 || r.flareSalvosUsed > 0) && (
           <>
@@ -91,9 +100,39 @@ export default function SimSummaryModal({ onClose }: Props) {
             </div>
           </>
         )}
+
+        {/* Detection timeline — only show if there are events beyond launch */}
+        {r.detectionTimeline.length > 1 && (
+          <>
+            <div style={styles.divider} />
+            <div style={styles.sectionHeader}>DETECTION TIMELINE</div>
+            <div style={{ ...styles.section, paddingTop: 4 }}>
+              {r.detectionTimeline.map((ev, i) => (
+                <div key={i} style={styles.timelineRow}>
+                  <span style={{ color: timelineColor(ev.type), minWidth: 36, display: 'inline-block' }}>
+                    {ev.time.toFixed(1)}s
+                  </span>
+                  <span style={{ color: '#557755', fontSize: 9, marginLeft: 6 }}>
+                    {ev.description}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
+}
+
+function timelineColor(type: string): string {
+  if (type === 'launch') return '#00cc60';
+  if (type === 'search_detected') return '#557755';
+  if (type === 'stt_lock') return '#ffaa00';
+  if (type === 'missile_active') return '#ff4444';
+  if (type === 'datalink_lost') return '#ff4444';
+  if (type === 'datalink_restored') return '#00cc44';
+  return '#aaccaa';
 }
 
 function Row({ label, value, dim }: { label: string; value: string; dim?: boolean }) {
@@ -184,5 +223,11 @@ const styles: Record<string, React.CSSProperties> = {
   value: {
     color: '#aaccaa',
     letterSpacing: 1,
+  },
+  timelineRow: {
+    display: 'flex',
+    alignItems: 'baseline',
+    marginBottom: 3,
+    fontSize: 10,
   },
 };

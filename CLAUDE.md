@@ -10,7 +10,7 @@ A DCS World-accurate missile engagement simulator built with React, TypeScript, 
 - Multi-phase thrust (boost + sustain from DCS ModelData)
 - 2D tactical display (canvas top-down, 700×700 px)
 - 3D engagement view (Three.js free-fly camera)
-- RWR / MAWS threat display (sector-accurate, gated on missile closure)
+- RWR / MAWS threat display (sector-accurate, emitter labels, threat persistence, Web Audio tones)
 - Launch envelope plot (binary-search Rmax/NEZ/Rmin at each aspect)
 - Missile editor
 - Shooter post-launch maneuver (crank/pump/drag) + datalink gate
@@ -38,8 +38,10 @@ src/
 │   ├── aircraft.ts            ← Aircraft state, maneuver logic (crank/notch/break)
 │   ├── shooterManeuver.ts     ← Shooter post-launch maneuver (crank/pump/drag) + gimbal gate
 │   └── engagement.ts          ← Main simulation loop (DT=0.05s)
+├── audio/
+│   └── rwrAudio.ts            ← Web Audio API tone synthesizer (RWR/MAWS sounds)
 ├── store/
-│   └── simStore.ts            ← Zustand global state
+│   └── simStore.ts            ← Zustand global state (incl. rwrAudioMuted)
 └── ui/
     ├── App.tsx                ← Root layout
     ├── SetupPanel.tsx         ← Scenario configuration
@@ -47,7 +49,7 @@ src/
     ├── TacticalDisplay.tsx    ← 2D canvas tactical display
     ├── TacticalDisplay3D.tsx  ← Three.js 3D view
     ├── EnvelopePlot.tsx       ← SVG launch envelope chart
-    ├── RWRDisplay.tsx         ← RWR/MAWS threat scope
+    ├── RWRDisplay.tsx         ← RWR/MAWS threat scope + audio triggers + mute toggle
     ├── MissileEditor.tsx      ← Missile data editor
     └── ComparisonPanel.tsx    ← Multi-engagement comparison table (COMPARE tab)
 tools/
@@ -78,7 +80,7 @@ DCS World ──► Quaggles datamine ──► tools/dcs_data_extractor.py ─�
 
 ```
 Per tick:
-  1. Seeker activation check (ARH/IR: range gate; SARH: immediate)
+  1. Seeker activation check (ARH: range gate; IR: immediate at launch — pre-locked; SARH: immediate)
   2. Radar detection timeline (shooter radar → search_detected → stt_lock events)
   3. Threat detection (gates targetShouldManeuver flag via MAWS/RWR — decoupled from seeker-active)
   4. targetShouldManeuver update:
@@ -94,7 +96,7 @@ Per tick:
   9. Thrust & mass: getThrustAndMass(t, phases) or linear burnout fallback
   10. Drag: getCxDCS(mach, Cx) × A_ref (or fallback multiplier)
   11. Integrate: newVx, newVy, newVz, newAlt; speedMs = sqrt(vx²+vy²+vz²) [true 3D airspeed]
-  12. CPA hit detection: closestApproachDist(oldPos→newPos vs target) < 8m
+  12. CPA hit detection: closestApproachDist(missile seg, target seg) < 12m  [segment-vs-segment]
   13. Ground-strike check (post-burnout)
   12. Accumulate: trail, peak speed/G, distance
 ```
@@ -209,12 +211,14 @@ python tools/dcs_data_extractor.py --datamine-path ./datamine --missile AIM_120C
 |------|---------|
 | `src/data/missiles.json` | 96 A2A/SAM missiles extracted from DCS datamine |
 | `src/data/types.ts` | TypeScript interfaces — `MissileData`, `CxCoeffs`, `ThrustPhase`, `PNEntry`, `DLZ` |
-| `src/physics/engagement.ts` | Main simulation loop, CPA hit detection (8m kill radius), CPA algorithm |
-| `src/physics/missile.ts` | `getCxDCS()`, `getThrustAndMass()`, `dragForce()` |
+| `src/physics/engagement.ts` | Main simulation loop, segment-vs-segment CPA (12m kill radius) |
+| `src/physics/missile.ts` | `getCxDCS()`, `getThrustAndMass()`, `dragForce()`, `fillMissingFields()` |
 | `src/physics/guidance.ts` | `proportionalNav()`, `getPNGain()`, `clampAcceleration()` |
 | `src/physics/aircraft.ts` | Aircraft state, `stepAircraft()`, maneuver turn rates |
 | `src/physics/atmosphere.ts` | ISA: `airDensity()`, `speedOfSound()` |
-| `src/store/simStore.ts` | Zustand store — all scenario state |
+| `src/store/simStore.ts` | Zustand store — all scenario state (incl. `rwrAudioMuted`) |
+| `src/audio/rwrAudio.ts` | Web Audio API synthesizer for RWR/MAWS tones |
+| `src/ui/RWRDisplay.tsx` | RWR scope + MAWS ring + audio triggers + mute toggle |
 | `src/ui/EnvelopePlot.tsx` | Binary-search Rmax/NEZ plot, fixed `bestHitNm = loNm` |
 | `tools/dcs_data_extractor.py` | Main extraction pipeline |
 | `tools/lua_parser.py` | Lua table parser using slpp |
@@ -268,22 +272,46 @@ SD-10 and PL-12 use full schedule: `[12km:1.0, 18km:0.75, 30km:0.5, 48km:0.2]`
 ### 4. Closest Point of Approach (CPA) Hit Detection
 
 ```typescript
-// In engagement.ts: closestApproachDist(mx0,my0,mz0, mx1,my1,mz1, tx,ty,tz)
-// Returns minimum 3D distance (metres) between missile path segment and target
-// Kill radius = 8m (real proximity fuze; works even at Mach 4+ closing speeds)
+// In engagement.ts: closestApproachDist(p0, p1, q0, q1)
+// Segment-vs-segment: tests missile path [p0→p1] against target path [q0→q1] per tick.
+// Returns minimum 3D distance in metres. Kill radius = 12m.
 ```
 
-Without CPA, a Mach 4 missile (68 m/step at DT=0.05s) would miss a 8m target every time.
+Both the missile AND the target move during each 0.05 s tick. At Mach 6 combined closing speed (~2000 m/s), the target moves 12+ m per tick — testing only the target's endpoint (old algorithm) could miss direct hits when the actual CPA was mid-tick. The segment-vs-segment formulation finds the true minimum over the full parametric intersection of both paths.
 
-### 5. Guidance Control Delay
+### 5. IR Seeker Behavior
+
+- **Pre-launch lock required**: IR missiles (`m.type === 'IR'`) cannot be fired if the target is beyond `seekerAcquisitionRange_nm`. `runSimulation()` returns a "cannot launch" result with `verdict: "Cannot launch — target beyond X seeker range"` before any simulation frames are generated.
+- **Immediate activation at launch**: IR seekers are locked before firing (pilot hears tone before pressing pickle). The seeker is set `active = true` on the first simulation tick — no range-gate delay unlike ARH.
+- **Lock loss if target outruns seeker**: If the target exceeds `1.5 × seekerAcquisitionRange_nm` during flight, the missile loses lock, `active` is set to `false`, and the missile goes ballistic (treated as seduced, `seductionEndTime = t + 9999` — no reacquire). This models IR seekers being outrun by targets going cold and fast.
+- **Gimbal limit (FOV check)**: Per-frame, the angle between the missile velocity vector and the LOS to the target is computed. If `offBoresightRad > seekerSpec.gimbalLimit_rad`, the seeker loses lock:
+  - Standard seekers (AIM-9M ±45°, R-73 ±75°): immediate lock loss → missile goes ballistic
+  - Imaging seekers (AIM-9X ±90°): 1.5s grace period before lock breaks; can re-acquire if target returns to FOV
+  - `_seekerLostTime` in `MissileState` tracks the time the target first left the FOV
+  - `cmSeduced` distinguishes CM-caused seduction from gimbal loss (prevents re-acquire clearing CM seduction)
+  - IR gimbal values in `MissileData.seekerSpec.gimbalLimit_rad`: AIM-9M=0.79, R-73=1.31, AIM-9X=1.57
+
+### 6. Guidance Control Delay
 
 Some missiles fly ballistically after launch before guidance activates (fins locked). Read from `guidance.controlDelay_s` or `guidance.autopilot.delay_s` (DCS ModelData[38]). Capped at **2.0 s** to prevent unrealistic ballistic arcs.
 
-During `time < controlDelay`, `ax = 0; ay = 0; az = G` — setting `az = G` cancels gravity in the integrator `(az - G) = 0`, so the missile holds its launch vector rather than diving. This models real aerodynamic stability during the fin-lock phase.
+During `time < controlDelay`, `ax = 0; ay = 0; az = 0` — no PN commands. The universal gravity bias (see Gravity Bias below) still applies, so the missile holds its launch vector rather than diving.
 
-Lofting air-launched missiles also receive a small initial `vz = shooterSpeed × sin(loftAngle/2)` to pre-pitch them into the loft trajectory, preventing the loft logic from fighting an initially diving missile.
+### 6. Gravity Bias
 
-### 6. Elevation Guidance (3D Homing)
+Every missile autopilot adds a constant `+G` to the vertical channel immediately after the PN and control-delay block:
+
+```typescript
+az += G;  // universal — applies in all phases including control delay and SARH-loss
+```
+
+In the integrator: `newVz = vz + (az + G + thrustZ + dragZ − G) × DT`. The `+G` (bias) and `−G` (gravity) cancel, so the net vertical force at baseline is zero — the missile holds altitude without any PN command. PN then provides corrections relative to level flight.
+
+**Why this is necessary:** At long range (30+ km), a 1 m altitude error at 30 km produces a LOS rate of only ~33 µrad/s. With N=4 and Vc=800 m/s, the PN vertical correction is ≈0.1 m/s² — far less than gravity (9.8 m/s²). Without the bias, gravity always wins and missiles slowly sink.
+
+**Control delay and SARH-loss:** These phases set `az = 0` (no PN), and the `az += G` still applies. Net result: gravity-compensated ballistic flight.
+
+### 7. Elevation Guidance (3D Homing)
 
 Air-launched missiles actively steer toward target altitude in all phases:
 - During boost (loftAngle > 0): pitch up at specified loft angle
@@ -293,7 +321,7 @@ Ground-launched SAMs:
 - First 20% of burn time: steep 60° climb (vertical launch profile)
 - After: altitude-guided toward target
 
-### 6. Aircraft Maneuver Turn Rates
+### 8. Aircraft Maneuver Turn Rates
 
 | Maneuver | G Load | Behavior |
 |----------|--------|----------|
@@ -302,9 +330,24 @@ Ground-launched SAMs:
 | crank | 3G | 50° off missile bearing |
 | bunt | — | Dive 250 ft/s (dead code for speed boost removed) |
 
+**Dogfight maneuvers** (relative to opponent aircraft, not missile; require `opponentState` param):
+
+| Maneuver | G Load | Behavior |
+|----------|--------|----------|
+| pursuit | 7G | Turn toward opponent's 6 o'clock (offensive tracking) |
+| scissors | 9G | Alternating 80° reversals every 3s to force overshoot |
+| barrel_roll | 5G | Same as scissors (rolling variant) |
+| break_into | 9G | Hard turn directly toward opponent (removes angle advantage) |
+| extend | 2G | Fly away from opponent at low turn rate (disengage) |
+
+`stepAircraft()` accepts `opponentState?: AircraftState`. Dogfight maneuvers use opponent heading/position to steer; BVR maneuvers use missile bearing. Target always gets `shooterState` as opponent.
+
+**`AircraftState.trail`**: Array of `{x, y, alt}` positions, max 500 points (shift on overflow). Populated in `stepAircraft()` return. Used for 3D path trail rendering.
+**`AircraftState.timeFlight`**: Elapsed sim time (s) used by scissors for phase alternation timing.
+
 Minimum altitude floor: 500 ft AGL (increased from 200 ft to prevent unrealistic terrain-skimming)
 
-### 7. Shooter Post-Launch Maneuvers (shooterManeuver.ts)
+### 9. Shooter Post-Launch Maneuvers (shooterManeuver.ts)
 
 | Type | Behavior |
 |------|---------|
@@ -320,9 +363,9 @@ Minimum altitude floor: 500 ft AGL (increased from 200 ft to prevent unrealistic
 - `hasIOG=true` (AIM-7M, R-27ER): dead-reckon mid-course if illuminator lost, resume when restored
 - `hasIOG=false` (AIM-7E): go ballistic immediately when datalink lost, resume guidance when restored
 
-**SARH datalink implementation**: tracked via a separate `sarhDatalinkLost` flag in `engagement.ts`. This is independent of the `seduced` CM flag. When `sarhDatalinkLost=true`, guidance commands are replaced with `ax=0, ay=0, az=G` (gravity-compensated ballistic). The flag updates each tick from `datalinkActive`, so guidance resumes automatically when datalink is restored.
+**SARH datalink implementation**: tracked via a separate `sarhDatalinkLost` flag in `engagement.ts`. This is independent of the `seduced` CM flag. When `sarhDatalinkLost=true`, guidance commands are `ax=0, ay=0, az=0` (no PN); the universal gravity bias keeps the missile flying level ballistically. The flag updates each tick from `datalinkActive`, so guidance resumes automatically when datalink is restored.
 
-### 8. Salvo Mode (ScenarioConfig.salvoCount / salvoInterval_s)
+### 10. Salvo Mode (ScenarioConfig.salvoCount / salvoInterval_s)
 
 - `salvoCount` 1–4 missiles per engagement (default 1)
 - `salvoInterval_s` time between launches (default 2s)
@@ -330,8 +373,9 @@ Minimum altitude floor: 500 ft AGL (increased from 200 ft to prevent unrealistic
 - `SimFrame.missile` is a backward-compat alias for `missiles[0]`
 - Secondary missiles share target state with lead but have independent kinematics/seekers
 - CM dispensing is gated on lead missile only (target defends against closest threat)
+- **Mixed salvo**: `ScenarioConfig.salvoMissiles` (index 0 = slot 2) overrides per-slot missile; `simStore.salvoMissileIds` holds the UI selection (null = same as primary). Each slot derives all physics parameters (thrust, drag, Cx, burn time, gLimit, seeker range, PN schedule, loft, control delay) independently from `slot.missile`.
 
-### 9. CM Visual Objects (types.ts → CMObject, engagement.ts → activeCMObjects)
+### 11. CM Visual Objects (types.ts → CMObject, engagement.ts → activeCMObjects)
 
 - `CMObject`: `{id, type, x, y, altFt, vx, vy, vzMs, lifetime, maxLifetime, opacity}`
 - Flares: deployed at 30% aircraft velocity, fall at 15 m/s, 3s lifetime
@@ -339,7 +383,70 @@ Minimum altitude floor: 500 ft AGL (increased from 200 ft to prevent unrealistic
 - `SimFrame.countermeasures[]` snapshots live CMObjects each tick
 - Rendered: yellow squares (flares) / cyan squares (chaff) in 2D canvas and 3D Three.js
 
-### 10. Comparison Table (ComparisonPanel.tsx, simStore.ComparisonEntry)
+### 12. RWR/MAWS Advanced Features (engagement.ts, RWRDisplay.tsx, rwrAudio.ts)
+
+**Emitter label scheme**:
+- Pre-pitbull: shooter's `AircraftData.rwrSymbol` is shown (e.g. "16" for F-16, "27" for Su-27)
+- Post-pitbull (ARH active): missile's `MissileData.rwrSymbol` is shown (e.g. "120" for AIM-120)
+- All contacts use the missile label "M" if `rwrSymbol` is absent
+
+**Emitter IDs** (unique key for persistence tracking):
+- `"shooter-fcr"` — shooter fire-control radar (SARH illumination, ARH pre-pitbull)
+- `"missile-N-seeker"` — per-missile entry once ARH seeker goes active (N = salvo index)
+- `"maws-N"` — per-missile MAWS passive IR detection entry (N = salvo index); type `'maws'`
+
+**Threat persistence** (`persistRWR()` in engagement.ts):
+- `Map<string, RWRThreat>` keyed by `emitterId`
+- Active threats refreshed each tick (`lastSeenTime = time`)
+- Absent threats fade over `FADE_S = 6 s`; `intensity` scales linearly to 0, then entry deleted
+- Opacity in RWRDisplay driven by `t.intensity` (range 0–1)
+
+**Bearing noise** (`bearingNoise()` in engagement.ts):
+- Deterministic: hash of emitterId + 0.5 s time-bucket → stable jitter frame-to-frame
+- ±0° at ≤5 km, ±10° max at 150 km+, linear interpolation
+
+**MAWS tiers** (from `AircraftData.mawsTier`):
+- Tier 1 (AN/AAR-47 type): detects motor plume only, 6 nm range
+- Tier 2 (DAS type): persistent UV tracking even during coast, 3 nm range
+- Salvo-aware: all in-flight missiles looped in `computeRWR()` for MAWS sectors
+- MAWS-detected missiles also appear on the RWR scope as orange `'maws'`-type contacts labeled "M" — lowest priority, no RWR audio
+
+**computeRWR() signature** (engagement.ts):
+```typescript
+function computeRWR(
+  target: AircraftState,
+  shooter: AircraftState,
+  missiles: Array<{ state: MissileState; done: boolean }>,
+  missileData: MissileData,
+  seekerRangeM: number,
+  hasMaws: boolean,
+  time: number,
+  shooterAircraftData?: AircraftData,
+): RWRState
+```
+
+**Web Audio** (rwrAudio.ts):
+- `initRWRAudio()` — creates `AudioContext` (call on first user interaction)
+- One-shot tones (play once on transitions):
+  - `playNewContact()` — new radar contact chirp (880 Hz)
+  - `playPitbullChirp()` — ARH seeker goes active (600→1800 Hz sweep)
+- Looping tones (start/stop pairs, managed by RWRDisplay based on current threat state):
+  - `startLockTone()` / `stopLockTone()` — repeating 2 Hz square-wave while STT lock active
+  - `startLaunchWarble()` / `stopLaunchWarble()` — rapid 7.7 Hz alternating sawtooth for launch/active
+  - `startMAWSAlarm()` / `stopMAWSAlarm()` — 3.3 Hz sawtooth pulse while MAWS warning active
+  - `startSearchPing()` / `stopSearchPing()` — periodic 440 Hz ping per radar sweep cycle
+  - `stopAllLoops()` — stops all active loops (call on pause, reset, unmount)
+- All synthesis: `OscillatorNode` + `GainNode`; no audio files
+- Priority: launch warble > lock tone > search ping; MAWS alarm runs independently
+- Muted when `rwrAudioMuted=true` in Zustand store; toggle button in RWRDisplay
+
+**RWRDisplay visual features**:
+- Heading bug: green triangle at 12-o-clock indicating own-ship nose direction
+- Priority diamond: `<polygon>` outline around highest-severity threat contact
+- Persistence opacity: `opacity = 0.4 + t.intensity * 0.6` (fading contacts dim smoothly)
+- Mute toggle button below status bar
+
+### 13. Comparison Table (ComparisonPanel.tsx, simStore.ComparisonEntry)
 
 - `ComparisonEntry`: records missile, maneuver, range, aspect, Pk, hit, TOF, terminal Mach, miss dist, F/A-pole, verdict
 - "Add Current" button in COMPARE tab adds active `simResult` to the table
@@ -355,8 +462,12 @@ Minimum altitude floor: 500 ft AGL (increased from 200 ft to prevent unrealistic
 - **Missile position**: full 3D — `MissileState` tracks `{x, y, vx, vy, vz, altFt}`. `vz` integrates every tick with gravity, thrust, and drag contributions.
 - **Gravity**: applied to `vz` as `−G * DT` every step.
 - **Drag**: computed on full 3D speed `sqrt(vx²+vy²+vz²)`; the drag force vector is decomposed along all three velocity components.
-- **CPA hit detection**: uses all three coordinates `(x, y, altFt*FT_TO_M)` for both missile and target.
+- **CPA hit detection**: segment-vs-segment across all three coordinates — both missile and target move during the tick.
 - **3D view** (`TacticalDisplay3D.tsx`): reads actual `altFt` from every `SimFrame` and renders with `worldTo3D(x, y, altFt)` → correct `[east, altitude, −north]` in Three.js space.
+- **Entity sizes**: aircraft sphere 150m, ground launcher box 200×150×200m, missile cone 60×200m (16 radial segments = smooth), CM box 30×30×30m.
+- **Aircraft velocity indicators**: each `AircraftEntity` in `TacticalDisplay3D.tsx` renders a `<Line>` from the aircraft's current 3D position to a point 2.5 s of travel ahead (`len = speed × 2.5`), same color as the aircraft sphere. Requires `vx/vy/vz` props; suppressed when speed < 10 m/s.
+- **Aircraft path trails**: `AircraftState.trail: Array<{x, y, alt}>` (max 500 pts, shift on overflow) populated in `stepAircraft()` return. Both shooter and target trails rendered as cyan / magenta `<Line>` in the 3D scene via `shooterTrailPts` / `targetTrailPts` memos. Trail points use per-point altitude (not current frame altitude).
+- **Secondary missile trails**: `frame.missiles[]` is iterated; lead missile trail rendered at `#ff8800` / 2.5px, secondary missiles at `#cc6600` / 1.8px.
 - **Aircraft altitude maneuvers**: notch descends at 100 ft/s (`vzMs = −30.5 m/s`), bunt at 250 ft/s (`vzMs = −76.2 m/s`). These are passed as `tvz` to the guidance law.
 
 ### What was cosmetic (upgraded as of this session)
@@ -373,7 +484,7 @@ R     = (tx−mx, ty−my, tz−mz)          3D relative position
 V_rel = (tvx−mvx, tvy−mvy, tvz−mvz)    3D relative velocity
 Vc    = −(R̂ · V_rel)                   closing velocity
 Ω     = (R × V_rel) / |R|²             LOS angular velocity vector
-a_cmd = N · Vc · (V̂_missile × Ω)       PN acceleration ⊥ to velocity
+a_cmd = -N · Vc · (V̂_missile × Ω)      PN acceleration ⊥ to velocity (negative sign essential)
 ```
 All three components `(ax, ay, az)` are produced by `proportionalNav()` and clamped as a 3D vector to `gLimit × G`.
 
@@ -386,6 +497,12 @@ All three components `(ax, ay, az)` are produced by `proportionalNav()` and clam
 - Terminal phase: `tz_guide = actualTargetAlt`.
 
 **Thrust along velocity**: motor thrust acts along `V̂_missile` (the instantaneous velocity unit vector), not a manually pitched elevCmd. No energy is "wasted" pitching the motor away from the flight path.
+
+**SAM pre-launch lock period** (`ScenarioConfig.lockTime_s`, default 4 s for ground mode):
+- Target flies straight for `lockTime_s` seconds before the missile launches (simulates SAM radar acquisition)
+- After the lock period, the missile is re-aimed at the target's new position
+- Configurable via slider in SetupPanel (ground mode only, range 0–12 s)
+- `fillMissingFields()` in `missile.ts` estimates null flat physics fields from DCS rich data (propulsion phases → `thrust_N`, Cx k0 → `dragCoefficient`, etc.) so SAMs with full DCS propulsion data always pass validation
 
 ### Side Profile View
 

@@ -5,6 +5,8 @@ import { validateScenario, runSimulation } from '../physics/engagement';
 import { KTS_TO_MS } from '../physics/atmosphere';
 import type { ScenarioConfig } from '../physics/engagement';
 import { DT } from '../physics/engagement';
+import { fillMissingFields } from '../physics/missile';
+import { stopAllLoops } from '../audio/rwrAudio';
 
 export default function PlaybackBar() {
   const store = useSimStore();
@@ -16,7 +18,7 @@ export default function PlaybackBar() {
     targetManeuver, targetChaffCount, targetFlareCount, targetWaypoints,
     targetHasMaws, targetReactOnDetect,
     rangeNm, aspectAngleDeg, selectedMissileId,
-    shooterManeuver, salvoCount, salvoInterval_s,
+    shooterManeuver, salvoCount, salvoInterval_s, lockTime_s, manualLoftAngle_deg, salvoMissileIds,
     simFrames, currentFrameIdx, simStatus, simResult,
     playbackSpeed, isPlaying,
     setSimFrames, setSimError, setCurrentFrameIdx, setIsPlaying,
@@ -61,9 +63,11 @@ export default function PlaybackBar() {
   }, [isPlaying, playbackSpeed, currentFrameIdx, simFrames.length]);
 
   function handleLaunch() {
+    stopAllLoops();
     resetSim();
-    const missile = missiles.find((m) => m.id === selectedMissileId);
-    if (!missile) return;
+    const rawMissile = missiles.find((m) => m.id === selectedMissileId);
+    if (!rawMissile) return;
+    const missile = fillMissingFields(rawMissile);
 
     const shooterAircraft = aircraft.find((a) => a.id === shooterAircraftId);
     const targetAircraft = aircraft[targetAircraftId];
@@ -92,6 +96,13 @@ export default function PlaybackBar() {
       shooterManeuver,
       salvoCount,
       salvoInterval_s,
+      lockTime_s,
+      manualLoftAngle_deg,
+      salvoMissiles: salvoMissileIds.map((id) => {
+        if (!id) return null;
+        const raw = missiles.find((ms) => ms.id === id) ?? null;
+        return raw ? fillMissingFields(raw) : null;
+      }),
     };
 
     const err = validateScenario(cfg);
@@ -129,6 +140,7 @@ export default function PlaybackBar() {
   }
 
   function handleReset() {
+    stopAllLoops();
     resetSim();
   }
 

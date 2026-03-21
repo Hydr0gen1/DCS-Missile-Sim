@@ -69,8 +69,19 @@ export interface MissileData {
    */
   hasIOG?: boolean;
 
+  /**
+   * True if this IR missile uses INS + datalink mid-course guidance from the shooter's radar.
+   * During mid-course, the shooter radar tracks the target → target's RWR sees a track strobe.
+   * When the IR seeker activates at terminal phase, the radar goes silent — RWR warning disappears.
+   * Examples: R-27ET, R-27T, MICA-IR, R-40TD.
+   */
+  hasDatalink?: boolean;
+
   /** True if this is a synthetic test round, not a real weapon */
   isSynthetic?: boolean;
+
+  /** RWR symbol shown when this missile's active ARH seeker is detected (e.g. "120", "77", "M") */
+  rwrSymbol?: string;
 
   // --- Rich DCS-fidelity fields (optional — from datamine extraction) ---
 
@@ -117,6 +128,13 @@ export interface MissileData {
   /** Dynamic Launch Zone values (exact DCS HUD data) */
   dlz?: DLZ;
 
+  /** Seeker specification (IR gimbal limits, etc.) */
+  seekerSpec?: {
+    /** Maximum off-boresight angle in radians (half-angle of seeker FOV cone).
+     *  AIM-9M: 0.79 rad (±45°), R-73: 1.31 rad (±75°), AIM-9X: 1.57 rad (±90°) */
+    gimbalLimit_rad?: number;
+  };
+
   /** DCS source metadata */
   dcsName?: string;
   sourceFile?: string;
@@ -143,6 +161,12 @@ export interface AircraftData {
   rcs_m2?: number;
   // Shooter radar config
   radar?: RadarConfig;
+  /** DCS-accurate RWR emitter symbol shown on target's RWR scope (e.g. "16"=F-16, "27"=Su-27) */
+  rwrSymbol?: string;
+  /** MAWS capability tier: 1=UV motor plume only (AN/AAR-47), 2=persistent UV tracking (DAS) */
+  mawsTier?: number;
+  /** Missile IDs this aircraft can carry. Undefined = no restriction (shows all missiles). */
+  compatibleMissiles?: string[];
 }
 
 export interface RadarConfig {
@@ -168,7 +192,7 @@ export type ShooterManeuverType = 'none' | 'crank_left' | 'crank_right' | 'pump'
 /** Pre-launch radar detection event */
 export interface DetectionEvent {
   time: number;
-  type: 'search_detected' | 'stt_lock' | 'launch' | 'missile_active' | 'datalink_lost' | 'datalink_restored';
+  type: 'search_detected' | 'stt_lock' | 'launch' | 'missile_active' | 'datalink_lost' | 'datalink_restored' | 'lock';
   description: string;
 }
 
@@ -191,16 +215,20 @@ export interface CMObject {
 
 /** Radar Warning Receiver threat type.
  * RWR only detects RADAR emissions — IR missiles are silent to RWR. */
-export type RWRThreatType = 'search' | 'track' | 'launch' | 'active';
+export type RWRThreatType = 'search' | 'track' | 'launch' | 'active' | 'maws';
 
 export interface RWRThreat {
   /** Degrees relative to target heading (0 = nose, 90 = right, 180 = tail) */
   bearing: number;
   type: RWRThreatType;
-  /** Short missile label, e.g. "120C", "27ER", "9M" */
+  /** Emitter label: shooter's rwrSymbol pre-pitbull, missileData.rwrSymbol post-pitbull */
   label: string;
   /** 0–1, inversely proportional to range */
   intensity: number;
+  /** Sim time (s) when this threat was last seen by computeRWR — used for persistence fade */
+  lastSeenTime: number;
+  /** Unique emitter ID for persistence tracking ("shooter-fcr", "missile-0-seeker", etc.) */
+  emitterId: string;
 }
 
 /** MAWS sector index 0–7 mapped clockwise from nose

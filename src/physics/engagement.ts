@@ -3,7 +3,7 @@
  * dt = 0.05s
  */
 import { airDensity, speedOfSound, NM_TO_M, M_TO_NM, FT_TO_M } from './atmosphere';
-import { dragForce, getCxDCS, getThrustAndMass, createMissileState, estimateMaxRangeM, getMissingFields } from './missile';
+import { dragForce, getCxDCS, getThrustAndMass, createMissileState, estimateMaxRangeM, getMissingFields, fillMissingFields } from './missile';
 import type { MissileState } from './missile';
 import { proportionalNav, clampAcceleration, getPNGain } from './guidance';
 import { createAircraftState, stepAircraft } from './aircraft';
@@ -15,26 +15,55 @@ import { DCS_CM_COEFFS } from '../data/dcsConstants';
 
 export const DT = 0.05; // seconds per physics step
 const G = 9.80665;
-const KILL_RADIUS_M = 8; // proximity fuze lethal radius (m)
+const KILL_RADIUS_M = 12; // proximity fuze lethal radius (m) — increased to account for warhead fragmentation pattern
 
 /**
- * Minimum 3-D distance between missile flight-segment [p0→p1] and target point T.
- * All inputs in metres. Returns metres.
- * Detects pass-through at any closing speed.
+ * Minimum 3-D distance between two line segments:
+ *   Segment A: p0 → p1 (missile path this tick)
+ *   Segment B: q0 → q1 (target path this tick)
+ * Returns the closest distance in metres.
+ * Handles the case where both objects are moving during the timestep,
+ * preventing pass-through misses at high combined closing speeds (Mach 6+).
  */
 function closestApproachDist(
-  mx0: number, my0: number, mz0: number,
-  mx1: number, my1: number, mz1: number,
-  tx: number,  ty: number,  tz: number,
+  p0x: number, p0y: number, p0z: number,  // missile start
+  p1x: number, p1y: number, p1z: number,  // missile end
+  q0x: number, q0y: number, q0z: number,  // target start
+  q1x: number, q1y: number, q1z: number,  // target end
 ): number {
-  const dx = mx1 - mx0, dy = my1 - my0, dz = mz1 - mz0;
-  const fx = tx - mx0,  fy = ty - my0,  fz = tz - mz0;
-  const len2 = dx * dx + dy * dy + dz * dz;
-  const t = len2 > 0.001 ? Math.max(0, Math.min(1, (fx * dx + fy * dy + fz * dz) / len2)) : 0;
-  const ex = mx0 + t * dx - tx;
-  const ey = my0 + t * dy - ty;
-  const ez = mz0 + t * dz - tz;
-  return Math.sqrt(ex * ex + ey * ey + ez * ez);
+  // Direction vectors
+  const dx = p1x - p0x, dy = p1y - p0y, dz = p1z - p0z; // missile direction
+  const ex = q1x - q0x, ey = q1y - q0y, ez = q1z - q0z; // target direction
+  const fx = p0x - q0x, fy = p0y - q0y, fz = p0z - q0z; // start separation
+
+  const a = dx * dx + dy * dy + dz * dz; // |d|²
+  const b = dx * ex + dy * ey + dz * ez; // d·e
+  const c = ex * ex + ey * ey + ez * ez; // |e|²
+  const d = dx * fx + dy * fy + dz * fz; // d·f
+  const e = ex * fx + ey * fy + ez * fz; // e·f
+
+  const denom = a * c - b * b;
+
+  let s: number, t: number;
+  if (denom < 0.001) {
+    // Segments nearly parallel — use midpoint
+    s = 0.5;
+    t = (b * s - e) / Math.max(c, 0.001);
+  } else {
+    s = (b * e - c * d) / denom;
+    t = (a * e - b * d) / denom;
+  }
+
+  // Clamp both parameters to [0, 1]
+  s = Math.max(0, Math.min(1, s));
+  t = Math.max(0, Math.min(1, t));
+
+  // Closest points on each segment
+  const cx = (p0x + s * dx) - (q0x + t * ex);
+  const cy = (p0y + s * dy) - (q0y + t * ey);
+  const cz = (p0z + s * dz) - (q0z + t * ez);
+
+  return Math.sqrt(cx * cx + cy * cy + cz * cz);
 }
 
 /**
@@ -87,6 +116,12 @@ export interface ScenarioConfig {
   aspectAngleDeg: number;   // 0=hot, 180=cold
   // Missile
   missile: MissileData;
+  /** SAM pre-launch lock time: target flies this many seconds before missile launches (default 4s for ground, 0 for air) */
+  lockTime_s?: number;
+  /** Manual loft angle override in degrees. Overrides the missile's built-in loft angle. 0 = flat trajectory. */
+  manualLoftAngle_deg?: number;
+  /** Missile types for salvo slots 2-4. null = use primary missile. */
+  salvoMissiles?: (MissileData | null)[];
 }
 
 export interface EngagementResult {
@@ -158,7 +193,8 @@ export interface SimState {
 
 /** Validate scenario before running */
 export function validateScenario(cfg: ScenarioConfig): string | null {
-  const missing = getMissingFields(cfg.missile);
+  const filled = fillMissingFields(cfg.missile);
+  const missing = getMissingFields(filled);
   if (missing.length > 0) {
     return `Cannot simulate ${cfg.missile.name}: missing fields: ${missing.join(', ')}`;
   }
@@ -210,7 +246,8 @@ export function runSimulation(cfg: ScenarioConfig): {
   shooterStartX: number;
   shooterStartY: number;
 } {
-  const m = cfg.missile;
+  // Fill in null physics fields from available DCS rich data (propulsion phases, Cx coefficients)
+  const m = fillMissingFields(cfg.missile);
 
   // Place shooter at origin; target at range/aspect
   const rangeM = cfg.rangeNm * NM_TO_M;
@@ -224,6 +261,44 @@ export function runSimulation(cfg: ScenarioConfig): {
   const targetY = rangeM * Math.cos(aspectRad);
 
   const isGroundLaunched = cfg.shooterRole === 'ground';
+
+  // ── IR pre-launch seeker validation ────────────────────────────────────────
+  // IR missiles require a valid seeker lock before launch. If the target is
+  // beyond the seeker acquisition range, the missile cannot be fired.
+  if (m.type === 'IR') {
+    const seekerMaxRange = (m.seekerAcquisitionRange_nm ?? 10) * NM_TO_M;
+    if (rangeM > seekerMaxRange) {
+      return {
+        frames: [],
+        result: {
+          hit: false,
+          pk: 0,
+          timeOfFlight: 0,
+          missDistance: rangeM,
+          terminalSpeedMs: 0,
+          terminalSpeedMach: 0,
+          fPoleNm: 0,
+          aPoleNm: 0,
+          verdict: `Cannot launch — target beyond ${m.name} seeker range (${m.seekerAcquisitionRange_nm?.toFixed(1) ?? '?'} nm)`,
+          missReason: 'seeker cannot acquire',
+          chaffSalvosUsed: 0,
+          flareSalvosUsed: 0,
+          seductionEvents: [],
+          maxSpeedMach: 0,
+          maxGLoad: 0,
+          distanceTraveledNm: 0,
+          targetExitSpeedKts: cfg.targetSpeed,
+          shooterExitSpeedKts: cfg.shooterSpeed,
+          detectionTimeline: [],
+        },
+        maxRangeM: seekerMaxRange,
+        minRangeM: seekerMaxRange * 0.05,
+        nezM: seekerMaxRange * 0.25,
+        shooterStartX: 0,
+        shooterStartY: 0,
+      };
+    }
+  }
 
   // Ground launchers are stationary; heading is auto-aimed toward target
   const shooterSpeedMs = isGroundLaunched ? 0 : cfg.shooterSpeed * 0.514444;
@@ -253,6 +328,19 @@ export function runSimulation(cfg: ScenarioConfig): {
     cfg.targetManeuver, false, 0,
     cfg.targetWaypoints,
   );
+
+  // ── SAM pre-launch lock period: target drifts while SAM acquires and locks ──
+  // Ground launchers use a configurable lock time (default 4 s); aircraft launch immediately.
+  const lockTime = isGroundLaunched ? (cfg.lockTime_s ?? 4.0) : 0;
+  if (lockTime > 0) {
+    for (let lt = 0; lt < lockTime; lt += DT) {
+      // Missile not yet launched — target flies straight (no maneuver, shooter pos as reference)
+      targetState = stepAircraft(targetState, DT, shooterX, shooterY, false);
+    }
+    // Re-aim missile toward the target's new position after lock
+    const aimHeadingDeg = ((Math.atan2(targetState.x - shooterX, targetState.y - shooterY) * 180) / Math.PI + 360) % 360;
+    missileState = createMissileState(shooterX, shooterY, aimHeadingDeg, shooterSpeedMs, cfg.shooterAlt);
+  }
 
   const initialDlz = computeDLZ(m, cfg.shooterAlt, cfg.shooterSpeed, cfg.targetAlt, cfg.targetSpeed, cfg.aspectAngleDeg);
   const maxRangeM = initialDlz.rmax_m;
@@ -286,20 +374,10 @@ export function runSimulation(cfg: ScenarioConfig): {
   const pnSchedule = m.guidance?.pn_schedule ?? null;
   const navN = m.guidanceNav ?? 4;
   const seekerRangeM = (m.seekerAcquisitionRange_nm ?? 10) * NM_TO_M;
-  // Prefer loft from DCS loft block, fall back to flat loftAngle_deg
-  const loftAngle = m.loft?.elevationDeg ?? m.loftAngle_deg ?? 0;
+  // Manual override takes priority; otherwise prefer DCS loft block, fall back to flat loftAngle_deg
+  const loftAngle = cfg.manualLoftAngle_deg ?? m.loft?.elevationDeg ?? m.loftAngle_deg ?? 0;
   const loftTriggerM = m.loft?.triggerRange_m ?? null;   // DCS ModelData[39]
   const loftDescentM = m.loft?.descentRange_m ?? null;   // DCS ModelData[40]
-
-  // Pre-pitch vz for lofting missiles: prevents gravity dive from fighting loft logic
-  if (loftAngle > 0 && !isGroundLaunched) {
-    const initialHorizDist = Math.hypot(targetX - shooterX, targetY - shooterY);
-    const effectiveLoftTrigger = loftTriggerM ?? maxRangeM * 0.5;
-    if (initialHorizDist > effectiveLoftTrigger) {
-      const launchPitchRad = Math.min(5 * Math.PI / 180, (loftAngle * Math.PI / 180) / 2);
-      missileState = { ...missileState, vz: shooterSpeedMs * Math.sin(launchPitchRad) };
-    }
-  }
 
   // ccm_k0: lower = more resistant to CM. null treated as 0.3 (moderate).
   const ccmK0 = m.ccm_k0 ?? 0.3;
@@ -312,10 +390,11 @@ export function runSimulation(cfg: ScenarioConfig): {
   const MAWS_DETECT_RANGE_M = 11112;
 
   // Threat detection state (used when reactOnDetect=true)
-  // SARH: FCR lock is immediately detectable on RWR
+  // SARH: FCR lock is immediately detectable on RWR → detected at launch
   // ARH: detected when seeker goes active (ARH seeker pings the target)
-  // IR: detected by MAWS when missile motor burns within MAWS range, else never
-  let threatDetectedByTarget = m.type === 'SARH'; // SARH → detected at launch
+  // IR+datalink: shooter radar tracks target mid-course → detected at launch (same as SARH)
+  // IR without datalink: detected by MAWS only, else never
+  let threatDetectedByTarget = m.type === 'SARH' || (m.type === 'IR' && m.hasDatalink === true);
 
   // targetShouldManeuver: decoupled from seeker-active state.
   // - SARH/ARH without reactOnDetect: pilot sees STT/TWS lock on RWR → maneuver starts at launch.
@@ -346,6 +425,7 @@ export function runSimulation(cfg: ScenarioConfig): {
   // Seduction state
   let seduced = false;
   let seductionEndTime = 0;
+  let cmSeduced = false; // true = seduction caused by CM (flare/chaff), vs gimbal loss
   // Last known target position (missile flies to this when seduced)
   let lastKnownTargetX = targetX;
   let lastKnownTargetY = targetY;
@@ -383,6 +463,9 @@ export function runSimulation(cfg: ScenarioConfig): {
   // Separate flag for SARH datalink-loss ballistic state (avoids overloading the CM seduced flag)
   let sarhDatalinkLost = false;
 
+  // RWR persistence: threats fade over 6 s on disappearance rather than vanishing instantly
+  const persistentThreats = new Map<string, RWRThreat>();
+
   // CM objects in flight (for visual rendering)
   let activeCMObjects: CMObject[] = [];
   let cmObjectIdCounter = 0;
@@ -398,6 +481,7 @@ export function runSimulation(cfg: ScenarioConfig): {
     lastKnownY: number;
     activeRecorded: boolean;
     done: boolean;
+    missile: MissileData;     // per-slot missile data (may differ from primary)
   }
 
   const salvoCount = Math.max(1, Math.min(4, cfg.salvoCount ?? 1));
@@ -408,6 +492,8 @@ export function runSimulation(cfg: ScenarioConfig): {
     const preLaunchState = createMissileState(
       shooterX, shooterY, initialHeadingDeg, shooterSpeedMs, cfg.shooterAlt,
     );
+    // Use per-slot missile if provided, otherwise fall back to primary
+    const slotMissile = cfg.salvoMissiles?.[i - 1] ?? m;
     secondarySlots.push({
       launchTime: i * salvoInterval,
       state: { ...preLaunchState, motorBurning: false, active: false },
@@ -418,6 +504,7 @@ export function runSimulation(cfg: ScenarioConfig): {
       lastKnownY: targetY,
       activeRecorded: false,
       done: false,
+      missile: slotMissile,
     });
   }
 
@@ -434,7 +521,26 @@ export function runSimulation(cfg: ScenarioConfig): {
     const dySk = targetState.y - missileState.y;
     const rangeSk = Math.sqrt(dxSk * dxSk + dySk * dySk);
 
-    if (!missileState.active && (m.type === 'ARH' || m.type === 'IR') && rangeSk <= seekerRangeM) {
+    // IR seeker activation:
+    // - Short-range IR (no datalink): seeker locked before launch, activate immediately
+    // - IR with datalink (R-27ET, MICA-IR etc): seeker activates at range like ARH
+    if (!missileState.active && m.type === 'IR') {
+      const irReadyToActivate = !m.hasDatalink || rangeSk <= seekerRangeM;
+      if (irReadyToActivate) {
+        missileState = { ...missileState, active: true };
+        if (!activeRecorded) {
+          const ssDx = shooterState.x - targetState.x;
+          const ssDy = shooterState.y - targetState.y;
+          aPoleNm = Math.sqrt(ssDx * ssDx + ssDy * ssDy) * M_TO_NM;
+          activeRecorded = true;
+          const desc = m.hasDatalink
+            ? `${m.name} IR seeker activated at ${(rangeSk * M_TO_NM).toFixed(1)} nm — RWR goes silent`
+            : `${m.name} IR seeker locked at launch (${(rangeSk * M_TO_NM).toFixed(1)} nm)`;
+          detectionTimeline.push({ time, type: 'missile_active', description: desc });
+        }
+      }
+    }
+    if (!missileState.active && m.type === 'ARH' && rangeSk <= seekerRangeM) {
       missileState = { ...missileState, active: true };
       if (!activeRecorded) {
         const ssDx = shooterState.x - targetState.x;
@@ -450,6 +556,20 @@ export function runSimulation(cfg: ScenarioConfig): {
         aPoleNm = cfg.rangeNm;
         activeRecorded = true;
         detectionTimeline.push({ time, type: 'missile_active', description: `${m.name} SARH seeker active` });
+      }
+    }
+
+    // --- IR lock loss: target opened range beyond 1.5× seeker acquisition range ---
+    // IR seekers cannot reacquire at long range; missile goes ballistic if outrun.
+    if (missileState.active && m.type === 'IR') {
+      const irMaxTrackRange = seekerRangeM * 1.5;
+      if (rangeSk > irMaxTrackRange && !seduced) {
+        missileState = { ...missileState, active: false };
+        lastKnownTargetX = targetState.x;
+        lastKnownTargetY = targetState.y;
+        seduced = true;
+        seductionEndTime = time + 9999; // permanent ballistic — no reacquire at range
+        detectionTimeline.push({ time, type: 'launch', description: `${m.name} seeker lost lock — target outran at ${(rangeSk * M_TO_NM).toFixed(1)} nm` });
       }
     }
 
@@ -502,12 +622,14 @@ export function runSimulation(cfg: ScenarioConfig): {
     }
 
     // --- Step target aircraft (with threat-gated maneuvering + energy model) ---
+    // Pass shooter as opponent so dogfight maneuvers (pursuit, scissors, etc.) can reference it
     const newTarget = stepAircraft(
       targetState, DT,
       missileState.x, missileState.y,
       targetShouldManeuver,
       !reactOnDetect || threatDetectedByTarget,
       cfg.targetAircraftData,
+      shooterState,
     );
 
     // Track last known target position when seeker is active
@@ -564,6 +686,7 @@ export function runSimulation(cfg: ScenarioConfig): {
 
         if (roll < pSeduced) {
           seduced = true;
+          cmSeduced = true;
           seductionEndTime = time + 2.0 + nextRng() * 2.0;
           cmEventThisFrame = { type: 'flare_seduced', probability: pSeduced, cm: 'flare' };
           seductionEvents.push(cmEventThisFrame);
@@ -594,6 +717,7 @@ export function runSimulation(cfg: ScenarioConfig): {
 
         if (roll < pSeduced) {
           seduced = true;
+          cmSeduced = true;
           seductionEndTime = time + 1.5 + nextRng() * 2.5;
           cmEventThisFrame = { type: 'chaff_seduced', probability: pSeduced, cm: 'chaff' };
           seductionEvents.push(cmEventThisFrame);
@@ -673,18 +797,82 @@ export function runSimulation(cfg: ScenarioConfig): {
 
     let ax: number, ay: number, az: number, limited: boolean;
     if (time < controlDelay) {
-      // Ballistic phase: fins locked. az=G cancels gravity so missile holds its launch vector.
-      // Real missiles are aerodynamically stable on their velocity vector during this phase.
-      ax = 0; ay = 0; az = G; limited = false;
+      // Ballistic phase: fins locked — no PN commands.
+      ax = 0; ay = 0; az = 0; limited = false;
     } else if (sarhDatalinkLost) {
-      // Pure SARH without IOG: illuminator lost → fly ballistic (gravity-compensated)
-      ax = 0; ay = 0; az = G; limited = false;
+      // Pure SARH without IOG: illuminator lost → no PN commands.
+      ax = 0; ay = 0; az = 0; limited = false;
     } else {
       ({ ax, ay, az, limited } = clampAcceleration(guidOut.ax, guidOut.ay, guidOut.az, gLimit, missileState.speedMs));
       if (limited && !seduced) {
         missReason = 'insufficient maneuverability';
       }
     }
+    // ── IR seeker gimbal check: target must stay within seeker FOV ───────────
+    // If the target maneuvers outside the gimbal cone, the seeker loses lock.
+    // AIM-9M: ±45° (0.79 rad)  — immediate loss, no re-acquire
+    // R-73:   ±75° (1.31 rad)  — immediate loss, no re-acquire
+    // AIM-9X: ±90° (1.57 rad)  — imaging seeker: 1.5s grace, can re-acquire
+    if (missileState.active && m.type === 'IR' && !seduced) {
+      const gimbalLimitRad = m.seekerSpec?.gimbalLimit_rad ?? 0.79;
+      const hasImagingSeeker = gimbalLimitRad >= 1.4;
+      const gSpd = missileState.speedMs; // use last-tick speed (speed3D computed below)
+      if (gSpd > 10) {
+        const losX = newTarget.x - missileState.x;
+        const losY = newTarget.y - missileState.y;
+        const losZ = (newTarget.altFt - missileState.altFt) * FT_TO_M;
+        const losR = Math.sqrt(losX * losX + losY * losY + losZ * losZ);
+        if (losR > 1) {
+          const dot3 = (missileState.vx * losX + missileState.vy * losY + missileState.vz * losZ) / (gSpd * losR);
+          const offBoresightRad = Math.acos(Math.max(-1, Math.min(1, dot3)));
+          if (offBoresightRad > gimbalLimitRad) {
+            if (hasImagingSeeker) {
+              if (!missileState._seekerLostTime) {
+                missileState = { ...missileState, _seekerLostTime: time };
+              } else if (time - missileState._seekerLostTime > 1.5) {
+                // Imaging seeker — lost for >1.5s, break lock
+                missileState = { ...missileState, active: false, _seekerLostTime: undefined };
+                if (!cmSeduced) {
+                  seduced = true;
+                  seductionEndTime = time + 9999;
+                  lastKnownTargetX = newTarget.x;
+                  lastKnownTargetY = newTarget.y;
+                  detectionTimeline.push({ time, type: 'launch',
+                    description: `${m.name} seeker lost lock — outside ${(gimbalLimitRad * 180 / Math.PI).toFixed(0)}° gimbal for >1.5s` });
+                }
+              }
+            } else {
+              // Standard seeker: immediate lock loss
+              missileState = { ...missileState, active: false, _seekerLostTime: undefined };
+              if (!cmSeduced) {
+                seduced = true;
+                seductionEndTime = time + 9999;
+                lastKnownTargetX = newTarget.x;
+                lastKnownTargetY = newTarget.y;
+                detectionTimeline.push({ time, type: 'launch',
+                  description: `${m.name} seeker lost lock — target outside ${(gimbalLimitRad * 180 / Math.PI).toFixed(0)}° gimbal` });
+              }
+            }
+          } else {
+            // Target is back in FOV — reset grace timer; re-acquire if imaging seeker
+            if (hasImagingSeeker && missileState._seekerLostTime) {
+              missileState = { ...missileState, _seekerLostTime: undefined };
+              if (seduced && !cmSeduced) {
+                seduced = false;
+                missileState = { ...missileState, active: true };
+                detectionTimeline.push({ time, type: 'missile_active',
+                  description: `${m.name} imaging seeker re-acquired target` });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Gravity bias: autopilot always cancels gravity in the vertical channel.
+    // Combined with the -G in the integrator, net vertical force is zero at baseline.
+    // PN then provides corrections relative to this level-flight reference.
+    az += G;
     // Track peak lateral G-load from guidance commands
     const gLoad = Math.sqrt(ax * ax + ay * ay + az * az) / G;
     if (gLoad > peakGLoad) peakGLoad = gLoad;
@@ -745,18 +933,21 @@ export function runSimulation(cfg: ScenarioConfig): {
       const fdy = shooterState.y - newTarget.y;
       fPoleNm = Math.sqrt(fdx * fdx + fdy * fdy) * M_TO_NM;
       if (!activeRecorded) aPoleNm = fPoleNm;
-      const rwrEnergy = computeRWR(newTarget, shooterState, missileState, m, seekerRangeM, hasMaws);
+      const allMsls = [{ state: missileState, done: false }, ...secondarySlots.filter(s => s.tFlight > 0).map(s => ({ state: s.state, done: s.done }))];
+      const rawRwrEnergy = computeRWR(newTarget, shooterState, allMsls, m, seekerRangeM, hasMaws, time, cfg.shooterAircraftData);
+      const rwrEnergy = persistRWR(rawRwrEnergy, persistentThreats, time);
       frames.push(buildFrame(time, snapshotMissiles(missileState), shooterState, newTarget, range, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrEnergy, currentWez, datalinkActive, activeCMObjects));
       break;
     }
 
-    // ── CPA hit detection: catches pass-through at any closing speed ──────────
+    // ── CPA hit detection: segment-vs-segment catches pass-through ───────────
     const newMx = missileState.x + newVx * DT;
     const newMy = missileState.y + newVy * DT;
     const cpa = closestApproachDist(
-      missileState.x, missileState.y, missileState.altFt * FT_TO_M,
-      newMx, newMy, newAlt * FT_TO_M,
-      newTarget.x, newTarget.y, newTarget.altFt * FT_TO_M,
+      missileState.x, missileState.y, missileState.altFt * FT_TO_M,  // missile start
+      newMx, newMy, newAlt * FT_TO_M,                                 // missile end
+      targetState.x, targetState.y, targetState.altFt * FT_TO_M,     // target start (pre-step)
+      newTarget.x, newTarget.y, newTarget.altFt * FT_TO_M,            // target end (post-step)
     );
     if (!seduced && cpa < KILL_RADIUS_M) {
       hitDetected = true;
@@ -764,7 +955,9 @@ export function runSimulation(cfg: ScenarioConfig): {
       const fdyH = shooterState.y - newTarget.y;
       fPoleNm = Math.sqrt(fdxH * fdxH + fdyH * fdyH) * M_TO_NM;
       if (!activeRecorded) aPoleNm = fPoleNm;
-      const rwrHit = computeRWR(newTarget, shooterState, missileState, m, seekerRangeM, hasMaws);
+      const allMslsHit = [{ state: missileState, done: false }, ...secondarySlots.filter(s => s.tFlight > 0).map(s => ({ state: s.state, done: s.done }))];
+      const rawRwrHit = computeRWR(newTarget, shooterState, allMslsHit, m, seekerRangeM, hasMaws, time, cfg.shooterAircraftData);
+      const rwrHit = persistRWR(rawRwrHit, persistentThreats, time);
       frames.push(buildFrame(time + DT, snapshotMissiles(missileState), shooterState, newTarget, cpa, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrHit, currentWez, datalinkActive, activeCMObjects));
       break;
     }
@@ -792,6 +985,7 @@ export function runSimulation(cfg: ScenarioConfig): {
       motorBurning: burning,
       energy: energyFrac,
       trail: newTrail,
+      gLoad,
     };
 
     // Track peak speed and distance traveled
@@ -869,15 +1063,41 @@ export function runSimulation(cfg: ScenarioConfig): {
       if (time >= slot.launchTime) {
         slot.tFlight += DT;
         const sFlight = slot.tFlight;
+        const sm = slot.missile; // per-slot missile data
+
+        // Per-slot physics parameters (derived from sm, not primary m)
+        const sUseMultiPhase = (sm.propulsion?.phases?.length ?? 0) > 0 &&
+          sm.propulsion!.phases!.every((p) => p.thrust_N != null && p.duration_s != null);
+        const sBurnTime = sUseMultiPhase
+          ? (sm.propulsion!.totalBurnTime_s ?? sm.motorBurnTime_s!)
+          : sm.motorBurnTime_s!;
+        const sMass = sm.mass_kg!;
+        const sMassBurnout = sm.massBurnout_kg ?? (sm.propulsion?.massAtBurnout_kg ?? sMass * 0.7);
+        const sThrust = sm.thrust_N!;
+        const sCxModel = sm.aerodynamics?.Cx ?? null;
+        const sCd = sm.dragCoefficient!;
+        const sArea = sm.referenceArea_m2!;
+        const sGLimit = sm.gLimit ?? 40;
+        const sPnSchedule = sm.guidance?.pn_schedule ?? null;
+        const sNavN = sm.guidanceNav ?? 4;
+        const sSeekerRangeM = (sm.seekerAcquisitionRange_nm ?? 10) * NM_TO_M;
+        const sLoftAngle = cfg.manualLoftAngle_deg ?? sm.loft?.elevationDeg ?? sm.loftAngle_deg ?? 0;
+        const sControlDelay = Math.min(sm.guidance?.controlDelay_s ?? sm.guidance?.autopilot?.delay_s ?? 0, 2.0);
+        const sLoftTriggerM = sm.loft?.triggerRange_m ?? null;
+        const sLoftDescentM = sm.loft?.descentRange_m ?? null;
+        const sRmax = sm.maxRange_nm ? sm.maxRange_nm * NM_TO_M : maxRangeM;
+        const sEffectiveTriggerM = sLoftTriggerM ?? (sLoftAngle > 0 ? sRmax * 0.5 : 0);
+        const sEffectiveDescentM = sLoftDescentM ?? (sLoftAngle > 0 ? sRmax * 0.25 : 0);
 
         // Seeker activation
         const sdx = newTarget.x - slot.state.x;
         const sdy = newTarget.y - slot.state.y;
         const sRange = Math.sqrt(sdx * sdx + sdy * sdy);
-        if (!slot.state.active && (m.type === 'ARH' || m.type === 'IR') && sRange <= seekerRangeM) {
+        const sIrReadyToActivate = !sm.hasDatalink || sRange <= sSeekerRangeM;
+        if (!slot.state.active && (sm.type === 'ARH' || (sm.type === 'IR' && sIrReadyToActivate)) && sRange <= sSeekerRangeM) {
           slot.state = { ...slot.state, active: true };
         }
-        if (m.type === 'SARH' && !slot.state.active) {
+        if (sm.type === 'SARH' && !slot.state.active) {
           slot.state = { ...slot.state, active: true };
         }
 
@@ -887,20 +1107,20 @@ export function runSimulation(cfg: ScenarioConfig): {
         }
 
         // Re-acquisition
-        if (slot.seduced && time >= slot.seductionEndTime && sRange <= seekerRangeM * 1.5) {
+        if (slot.seduced && time >= slot.seductionEndTime && sRange <= sSeekerRangeM * 1.5) {
           slot.seduced = false;
         }
 
-        const sBurning = sFlight < burnTime;
+        const sBurning = sFlight < sBurnTime;
         let sCurrentMass: number;
         let sThrustForce: number;
-        if (useMultiPhase) {
-          const [thr, mss] = getThrustAndMass(sFlight, propPhases, mass);
+        if (sUseMultiPhase) {
+          const [thr, mss] = getThrustAndMass(sFlight, sm.propulsion!.phases!, sMass);
           sThrustForce = thr;
           sCurrentMass = mss;
         } else {
-          sCurrentMass = sBurning ? mass - (mass - massBurnout) * (sFlight / burnTime) : massBurnout;
-          sThrustForce = sBurning ? thrust : 0;
+          sCurrentMass = sBurning ? sMass - (sMass - sMassBurnout) * (sFlight / sBurnTime) : sMassBurnout;
+          sThrustForce = sBurning ? sThrust : 0;
         }
 
         const sMz = slot.state.altFt * FT_TO_M;
@@ -910,8 +1130,8 @@ export function runSimulation(cfg: ScenarioConfig): {
         const sHorizDist = Math.hypot(sGuidX - slot.state.x, sGuidY - slot.state.y);
         const sTzGuide = computeLoftAltitude(
           sMz, sTz, sHorizDist,
-          loftAngle, effectiveTriggerM, effectiveDescentM,
-          slot.seduced, isGroundLaunched, sFlight < burnTime, burnTime > 0 ? sFlight / burnTime : 1,
+          sLoftAngle, sEffectiveTriggerM, sEffectiveDescentM,
+          slot.seduced, isGroundLaunched, sFlight < sBurnTime, sBurnTime > 0 ? sFlight / sBurnTime : 1,
         );
 
         const sGuidOut = proportionalNav({
@@ -921,20 +1141,42 @@ export function runSimulation(cfg: ScenarioConfig): {
           tvx: slot.seduced ? 0 : newTarget.vx,
           tvy: slot.seduced ? 0 : newTarget.vy,
           tvz: slot.seduced ? 0 : (newTarget.vzMs ?? 0),
-          navConst: getPNGain(sRange, pnSchedule, navN),
+          navConst: getPNGain(sRange, sPnSchedule, sNavN),
         });
 
         let sAx: number, sAy: number, sAz: number;
-        if (sFlight < controlDelay) {
-          sAx = 0; sAy = 0; sAz = G; // gravity compensation, same as primary missile
+        if (sFlight < sControlDelay) {
+          sAx = 0; sAy = 0; sAz = 0; // no PN during fins-locked phase
         } else {
-          ({ ax: sAx, ay: sAy, az: sAz } = clampAcceleration(sGuidOut.ax, sGuidOut.ay, sGuidOut.az, gLimit, slot.state.speedMs));
+          ({ ax: sAx, ay: sAy, az: sAz } = clampAcceleration(sGuidOut.ax, sGuidOut.ay, sGuidOut.az, sGLimit, slot.state.speedMs));
+        }
+        sAz += G; // gravity bias: universal gravity compensation for all phases
+
+        // IR gimbal check for secondary missiles
+        if (slot.state.active && sm.type === 'IR') {
+          const sGimbalLimitRad = sm.seekerSpec?.gimbalLimit_rad ?? 0.79;
+          const sSpeed3Dg = Math.sqrt(slot.state.vx ** 2 + slot.state.vy ** 2 + slot.state.vz ** 2);
+          if (sSpeed3Dg > 10) {
+            const sLosX = newTarget.x - slot.state.x;
+            const sLosY = newTarget.y - slot.state.y;
+            const sLosZ = (newTarget.altFt - slot.state.altFt) * FT_TO_M;
+            const sLosR = Math.sqrt(sLosX * sLosX + sLosY * sLosY + sLosZ * sLosZ);
+            if (sLosR > 1) {
+              const sDot = (slot.state.vx * sLosX + slot.state.vy * sLosY + slot.state.vz * sLosZ) / (sSpeed3Dg * sLosR);
+              const sObs = Math.acos(Math.max(-1, Math.min(1, sDot)));
+              if (sObs > sGimbalLimitRad && !slot.seduced) {
+                slot.state = { ...slot.state, active: false };
+                slot.seduced = true;
+                slot.seductionEndTime = time + 9999;
+              }
+            }
+          }
         }
 
         const sSpeed3D = Math.sqrt(slot.state.vx ** 2 + slot.state.vy ** 2 + slot.state.vz ** 2);
         const sMach = sSpeed3D / speedOfSound(slot.state.altFt);
-        const sECd = cxModel ? getCxDCS(sMach, cxModel) : cd * machDragMultiplierFallback(sMach);
-        const sFDrag = dragForce(sSpeed3D, slot.state.altFt, sECd, area);
+        const sECd = sCxModel ? getCxDCS(sMach, sCxModel) : sCd * machDragMultiplierFallback(sMach);
+        const sFDrag = dragForce(sSpeed3D, slot.state.altFt, sECd, sArea);
         const sInvMass = 1 / sCurrentMass;
         const sSafe = Math.max(sSpeed3D, 0.001);
         const sTAx = sThrustForce * sInvMass * (slot.state.vx / sSafe);
@@ -952,11 +1194,12 @@ export function runSimulation(cfg: ScenarioConfig): {
         const sNewMx = slot.state.x + sNewVx * DT;
         const sNewMy = slot.state.y + sNewVy * DT;
 
-        // Hit/miss check
+        // Hit/miss check — segment-vs-segment CPA
         const sCpa = closestApproachDist(
-          slot.state.x, slot.state.y, slot.state.altFt * FT_TO_M,
-          sNewMx, sNewMy, sNewAlt * FT_TO_M,
-          newTarget.x, newTarget.y, newTarget.altFt * FT_TO_M,
+          slot.state.x, slot.state.y, slot.state.altFt * FT_TO_M,  // missile start
+          sNewMx, sNewMy, sNewAlt * FT_TO_M,                        // missile end
+          targetState.x, targetState.y, targetState.altFt * FT_TO_M, // target start
+          newTarget.x, newTarget.y, newTarget.altFt * FT_TO_M,       // target end
         );
         if (!slot.seduced && sCpa < KILL_RADIUS_M) {
           slot.done = true;
@@ -968,7 +1211,8 @@ export function runSimulation(cfg: ScenarioConfig): {
         const sTrail = [...slot.state.trail, { x: slot.state.x, y: slot.state.y, alt: slot.state.altFt }];
         if (sTrail.length > 500) sTrail.shift();
 
-        const sEnergyFrac = Math.min(1, sNewSpeed / maxSpeedMs);
+        const sMaxSpeedMs = sm.maxSpeed_mach ? sm.maxSpeed_mach * speedOfSound(sNewAlt) : 1500;
+        const sEnergyFrac = Math.min(1, sNewSpeed / sMaxSpeedMs);
         slot.state = {
           ...slot.state,
           x: sNewMx, y: sNewMy, vx: sNewVx, vy: sNewVy, vz: sNewVz,
@@ -985,7 +1229,9 @@ export function runSimulation(cfg: ScenarioConfig): {
     targetState = newTarget;
     time += DT;
 
-    const rwrFrame = computeRWR(targetState, shooterState, missileState, m, seekerRangeM, hasMaws);
+    const allMslsFrame = [{ state: missileState, done: false }, ...secondarySlots.filter(s => s.tFlight > 0).map(s => ({ state: s.state, done: s.done }))];
+    const rawRwrFrame = computeRWR(targetState, shooterState, allMslsFrame, m, seekerRangeM, hasMaws, time, cfg.shooterAircraftData);
+    const rwrFrame = persistRWR(rawRwrFrame, persistentThreats, time);
     frames.push(buildFrame(time, snapshotMissiles(missileState), shooterState, targetState, range, closingVelocity, maxSpeedMs, cmEventThisFrame, rwrFrame, currentWez, datalinkActive, activeCMObjects));
   }
 
@@ -1120,93 +1366,213 @@ function normalizeAngleRad(a: number): number {
 // ── RWR / MAWS computation ────────────────────────────────────────────────────
 
 /**
+ * Deterministic bearing noise that drifts slowly (changes every 0.5 s).
+ * Degrades accuracy at long range: ±0° at ≤5 km, ±10° at 150 km+.
+ * Uses a hash of emitterId + time-bucket so noise is stable frame-to-frame.
+ */
+function bearingNoise(bearing: number, rangeM: number, emitterId: string, time: number): number {
+  const maxNoiseDeg = Math.min(10, Math.max(0, (rangeM - 5000) / 145000 * 10));
+  if (maxNoiseDeg < 0.01) return bearing;
+  const bucket = Math.floor(time * 2); // 0.5 s buckets
+  let h = 5381;
+  for (let i = 0; i < emitterId.length; i++) h = (((h << 5) + h) ^ emitterId.charCodeAt(i)) | 0;
+  h = ((h * 1664525 + bucket * 22695477 + 1013904223) | 0) >>> 0;
+  const jitter = (h / 0x100000000 - 0.5) * 2 * maxNoiseDeg;
+  return (bearing + jitter + 360) % 360;
+}
+
+/**
+ * Merge a fresh per-tick RWR snapshot into the persistent threat map.
+ * Active threats are refreshed; absent threats fade over 6 seconds then expire.
+ */
+function persistRWR(
+  raw: RWRState,
+  persistent: Map<string, RWRThreat>,
+  time: number,
+): RWRState {
+  const FADE_S = 6.0;
+  const activeIds = new Set<string>();
+
+  for (const t of raw.radarThreats) {
+    activeIds.add(t.emitterId);
+    persistent.set(t.emitterId, t); // refresh with latest data (lastSeenTime = time)
+  }
+
+  const threats: RWRThreat[] = [];
+  for (const [id, t] of persistent) {
+    if (activeIds.has(id)) {
+      threats.push(t);
+    } else {
+      const age = time - t.lastSeenTime;
+      if (age > FADE_S) { persistent.delete(id); continue; }
+      threats.push({ ...t, intensity: t.intensity * Math.max(0, 1 - age / FADE_S) });
+    }
+  }
+  return { ...raw, radarThreats: threats };
+}
+
+/**
  * Compute RWR and MAWS state from the target aircraft's perspective.
  *
  * RWR detects RADAR emissions only:
- *   - SARH: continuous illumination strobe from shooter bearing
- *   - ARH:  'search' from shooter before seeker active; 'active' from missile bearing after
- *   - IR:   SILENT — IR missiles produce no radar return, RWR cannot detect them
+ *   - SARH: continuous CW illumination from shooter — label = shooter's rwrSymbol
+ *   - ARH pre-pitbull: FCR TWS/STT from shooter bearing — label = shooter's rwrSymbol
+ *   - ARH post-pitbull: active seeker from missile bearing — label = missile's rwrSymbol ("M")
+ *   - IR: SILENT — no radar return, RWR cannot detect them
  *
- * MAWS detects UV/IR motor plumes (all missile types) only if hasMaws===true.
- * MAWS gives coarse 8-sector direction, NOT a precise bearing.
+ * Accepts an array of missiles to support salvo engagements.
+ * Each in-flight missile produces its own MAWS sector and ARH active-seeker threat.
+ * Shooter FCR appears as a single entry regardless of salvo count.
+ *
+ * MAWS detects UV/IR motor plumes (all types) if hasMaws===true; tier 2 also tracks coasting.
  */
 function computeRWR(
   target: AircraftState,
   shooter: AircraftState,
-  missile: MissileState,
+  missiles: Array<{ state: MissileState; done: boolean }>,
   missileData: MissileData,
   seekerRangeM: number,
   hasMaws: boolean,
+  time: number,
+  shooterAircraftData?: AircraftData,
 ): RWRState {
   const radarThreats: RWRThreat[] = [];
   const targetHeadRad = (target.headingDeg * Math.PI) / 180;
 
   /** Bearing from target to point (px,py), relative to target heading, 0–360 */
   function relBearing(px: number, py: number): number {
-    const absRad = Math.atan2(px - target.x, py - target.y); // atan2(dx,dy) = azimuth from north
+    const absRad = Math.atan2(px - target.x, py - target.y);
     return ((absRad - targetHeadRad) * 180 / Math.PI + 360) % 360;
   }
 
   const shooterRangeM = Math.hypot(shooter.x - target.x, shooter.y - target.y);
-  const missileRangeM = Math.hypot(missile.x - target.x, missile.y - target.y);
-  // Short label: first 5 chars without spaces, e.g. "AIM-9" "R-27E" "120C"
-  const shortLabel = missileData.name.replace(/\s+/g, '').slice(0, 5);
+  // Emitter labels: shooter's radar designator pre-pitbull, missile seeker designator post-pitbull
+  const shooterRwrLabel = shooterAircraftData?.rwrSymbol ?? 'U';
+  const missileRwrLabel = missileData.rwrSymbol ?? 'M';
 
-  // Is missile still closing on target? (gate all threats once missile has passed)
-  const mtx = target.x - missile.x, mty = target.y - missile.y;
-  const closingRate = missileRangeM > 1
-    ? (missile.vx * mtx + missile.vy * mty) / missileRangeM
-    : 0;
-  const missileApproaching = closingRate > -50; // allow small negative (terminal proximity)
-
-  // --- RWR: radar threats only (IR missiles have no entry here) ---
+  // ── SARH: shooter continuously illuminates with CW radar — single emitter ──
   if (missileData.type === 'SARH') {
-    // Shooter continuously illuminates target with CW radar — always detectable
-    radarThreats.push({
-      bearing: relBearing(shooter.x, shooter.y),
-      type: missile.active ? 'launch' : 'track',
-      label: shortLabel,
-      intensity: Math.min(1, 50000 / Math.max(shooterRangeM, 1000)),
-    });
-  } else if (missileData.type === 'ARH') {
-    if (!missile.active) {
-      // Pre-active: FCR is in STT/TWS tracking mode to provide mid-course guidance.
-      // Target RWR sees the tracking radar from shooter bearing (track, not launch).
+    const primaryMsl = missiles.find(m => !m.done);
+    if (primaryMsl) {
       radarThreats.push({
-        bearing: relBearing(shooter.x, shooter.y),
-        type: 'track',
-        label: shortLabel,
-        intensity: Math.min(0.7, 30000 / Math.max(shooterRangeM, 1000)),
-      });
-    } else if (missileApproaching) {
-      // Seeker active AND missile still closing: ACTIVE spike from missile bearing
-      radarThreats.push({
-        bearing: relBearing(missile.x, missile.y),
-        type: 'active',
-        label: shortLabel,
-        intensity: Math.min(1, seekerRangeM / Math.max(missileRangeM, 100)),
+        bearing: bearingNoise(relBearing(shooter.x, shooter.y), shooterRangeM, 'shooter-fcr', time),
+        type: primaryMsl.state.active ? 'launch' : 'track',
+        label: shooterRwrLabel,
+        intensity: Math.min(1, 50000 / Math.max(shooterRangeM, 1000)),
+        lastSeenTime: time,
+        emitterId: 'shooter-fcr',
       });
     }
   }
-  // IR missiles: no radar signature — radarThreats stays empty
 
-  // --- MAWS: UV/IR plume detection only within realistic sensor range (~6nm) ---
-  const MAWS_RANGE_M = 11112; // ~6nm, AN/AAR-56/57 spec
-  const mawsActive: MAWSSector[] = [];
-  const mawsWarning = hasMaws && missile.motorBurning && missileRangeM <= MAWS_RANGE_M && missileApproaching;
-  if (mawsWarning) {
-    const missileBearing = relBearing(missile.x, missile.y);
-    // 8 sectors of 45° each, sector 0 = forward arc
-    const sectorIdx = Math.round(missileBearing / 45) % 8;
-    mawsActive.push({ sectorIdx, active: true });
+  // ── ARH: pre-pitbull = shooter FCR (one entry); post-pitbull = each missile seeker ──
+  if (missileData.type === 'ARH') {
+    const anyPrePitbull = missiles.some(m => !m.done && !m.state.active);
+    if (anyPrePitbull) {
+      radarThreats.push({
+        bearing: bearingNoise(relBearing(shooter.x, shooter.y), shooterRangeM, 'shooter-fcr', time),
+        type: 'track',
+        label: shooterRwrLabel,
+        intensity: Math.min(0.7, 30000 / Math.max(shooterRangeM, 1000)),
+        lastSeenTime: time,
+        emitterId: 'shooter-fcr',
+      });
+    }
+    for (let mi = 0; mi < missiles.length; mi++) {
+      const msl = missiles[mi];
+      if (msl.done || !msl.state.active) continue;
+      const mRangeM = Math.hypot(msl.state.x - target.x, msl.state.y - target.y);
+      const mtx = target.x - msl.state.x, mty = target.y - msl.state.y;
+      const cr = mRangeM > 1 ? (msl.state.vx * mtx + msl.state.vy * mty) / mRangeM : 0;
+      if (cr <= -50) continue; // passed target
+      const eid = `missile-${mi}-seeker`;
+      radarThreats.push({
+        bearing: bearingNoise(relBearing(msl.state.x, msl.state.y), mRangeM, eid, time),
+        type: 'active',
+        label: missileRwrLabel,
+        intensity: Math.min(1, seekerRangeM / Math.max(mRangeM, 100)),
+        lastSeenTime: time,
+        emitterId: eid,
+      });
+    }
   }
+  // IR: no radar signature by default
+  // IR with datalink: shooter radar tracks during mid-course → RWR track strobe
+  // When seeker activates (terminal phase), radar goes silent → warning disappears
+  if (missileData.type === 'IR' && missileData.hasDatalink) {
+    const anyMidCourse = missiles.some(m => !m.done && !m.state.active);
+    if (anyMidCourse) {
+      radarThreats.push({
+        bearing: bearingNoise(relBearing(shooter.x, shooter.y), shooterRangeM, 'shooter-fcr', time),
+        type: 'track',
+        label: shooterRwrLabel,
+        intensity: Math.min(0.7, 30000 / Math.max(shooterRangeM, 1000)),
+        lastSeenTime: time,
+        emitterId: 'shooter-fcr',
+      });
+    }
+  }
+
+  // ── MAWS: UV/IR detection for each in-flight missile ────────────────────────
+  const MAWS_RANGE_MOTOR = 11112; // 6 nm — motor plume
+  const MAWS_RANGE_COAST = 5556;  // 3 nm — body UV (tier 2 only)
+  const mawsTier = shooterAircraftData?.mawsTier ?? 1;
+  const mawsActive: MAWSSector[] = [];
+  let mawsWarning = false;
+
+  for (const msl of missiles) {
+    if (msl.done) continue;
+    const mRangeM = Math.hypot(msl.state.x - target.x, msl.state.y - target.y);
+    const mtx2 = target.x - msl.state.x, mty2 = target.y - msl.state.y;
+    const cr2 = mRangeM > 1 ? (msl.state.vx * mtx2 + msl.state.vy * mty2) / mRangeM : 0;
+    if (cr2 <= -50) continue;
+    const canDetectMotor = hasMaws && msl.state.motorBurning && mRangeM <= MAWS_RANGE_MOTOR;
+    const canDetectCoast = hasMaws && mawsTier >= 2 && !msl.state.motorBurning && mRangeM <= MAWS_RANGE_COAST;
+    if (canDetectMotor || canDetectCoast) {
+      mawsWarning = true;
+      const sectorIdx = Math.round(relBearing(msl.state.x, msl.state.y) / 45) % 8;
+      if (!mawsActive.some(s => s.sectorIdx === sectorIdx)) {
+        mawsActive.push({ sectorIdx, active: true });
+      }
+    }
+  }
+
+  // ── MAWS contacts on RWR: IR missiles show "M" on scope when MAWS detects them ──
+  // These appear as 'maws' type — orange, lowest priority, no RWR audio.
+  if (hasMaws) {
+    for (let mi = 0; mi < missiles.length; mi++) {
+      const msl = missiles[mi];
+      if (msl.done) continue;
+      const mRangeM = Math.hypot(msl.state.x - target.x, msl.state.y - target.y);
+      const cr = mRangeM > 1
+        ? (msl.state.vx * (target.x - msl.state.x) + msl.state.vy * (target.y - msl.state.y)) / mRangeM
+        : 0;
+      if (cr <= -50) continue; // missile has passed target
+      const canDetectM = msl.state.motorBurning && mRangeM <= MAWS_RANGE_MOTOR;
+      const canDetectC = mawsTier >= 2 && !msl.state.motorBurning && mRangeM <= MAWS_RANGE_COAST;
+      if (canDetectM || canDetectC) {
+        const eid = `maws-${mi}`;
+        radarThreats.push({
+          bearing: relBearing(msl.state.x, msl.state.y),
+          type: 'maws',
+          label: 'M',
+          intensity: Math.min(1, MAWS_RANGE_MOTOR / Math.max(mRangeM, 100)),
+          lastSeenTime: time,
+          emitterId: eid,
+        });
+      }
+    }
+  }
+
+  const anyActiveApproaching = missileData.type === 'ARH' &&
+    missiles.some(m => !m.done && m.state.active);
 
   return {
     radarThreats,
     mawsWarning,
     mawsSectors: mawsActive,
-    radarWarning: missileData.type === 'SARH' || (missileData.type === 'ARH' && missile.active),
-    launchWarning: missile.active && missileData.type === 'ARH' && missileApproaching,
+    radarWarning: missileData.type === 'SARH' || anyActiveApproaching,
+    launchWarning: anyActiveApproaching,
   };
 }
 
