@@ -489,9 +489,19 @@ function CompassOverlay() {
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export default function TacticalDisplay3D() {
+interface TacticalDisplay3DProps {
+  mobile?: boolean;
+}
+
+export default function TacticalDisplay3D({ mobile }: TacticalDisplay3DProps) {
   return (
-    <div style={{ position: 'relative', width: 700, height: 700, flexShrink: 0 }}>
+    <div style={{
+      position: 'relative',
+      width: mobile ? '100%' : 700,
+      height: mobile ? undefined : 700,
+      aspectRatio: mobile ? '1' : undefined,
+      flexShrink: mobile ? undefined : 0,
+    }}>
       <Canvas
         style={{ background: 'linear-gradient(to bottom, #040810 0%, #060d06 60%, #080c08 100%)' }}
         camera={{ fov: 65, near: 10, far: 3000000 }}

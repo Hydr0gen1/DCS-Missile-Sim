@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { T } from './ui/theme';
 import { useSimStore } from './store/simStore';
+import { useIsMobile } from './hooks/useIsMobile';
 import SetupPanel from './ui/SetupPanel';
 import TacticalDisplay from './ui/TacticalDisplay';
 import TacticalDisplay3D from './ui/TacticalDisplay3D';
@@ -12,7 +13,124 @@ import EnvelopePlot from './ui/EnvelopePlot';
 import SimSummaryModal from './ui/SimSummaryModal';
 import ComparisonPanel from './ui/ComparisonPanel';
 
-export default function App() {
+// ─── Mobile layout ────────────────────────────────────────────────────────────
+
+function MobileLayout() {
+  const {
+    appMode, setAppMode, mobileTab, setMobileTab,
+    simStatus, simResult,
+  } = useSimStore();
+  const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
+  const [showSummary, setShowSummary] = useState(false);
+
+  // Auto-show summary on completion
+  useEffect(() => {
+    if (simStatus === 'hit' || simStatus === 'miss') {
+      setShowSummary(true);
+    }
+  }, [simStatus]);
+
+  // Auto-switch to view tab on launch
+  useEffect(() => {
+    if (simStatus === 'running') {
+      setMobileTab('view');
+    }
+  }, [simStatus, setMobileTab]);
+
+  return (
+    <div style={mobileStyles.root}>
+      {/* ── Compact header ── */}
+      <div style={mobileStyles.header}>
+        <span style={mobileStyles.title}>DCS MISSILE SIM</span>
+        <div style={mobileStyles.modeRow}>
+          {(['tactical', 'envelope'] as const).map((mode) => (
+            <button
+              key={mode}
+              style={{
+                ...mobileStyles.modeBtn,
+                ...(appMode === mode ? mobileStyles.modeBtnActive : {}),
+              }}
+              onClick={() => setAppMode(mode)}
+            >
+              {mode === 'tactical' ? 'TAC' : 'ENV'}
+            </button>
+          ))}
+          {simResult && appMode === 'tactical' && (
+            <button
+              style={{ ...mobileStyles.modeBtn, borderColor: T.success, color: T.success }}
+              onClick={() => setShowSummary(true)}
+            >
+              RES
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Tab bar (tactical mode only) ── */}
+      {appMode === 'tactical' && (
+        <div style={mobileStyles.tabBar}>
+          {(['setup', 'view', 'data'] as const).map((tab) => (
+            <button
+              key={tab}
+              style={{
+                ...mobileStyles.tab,
+                ...(mobileTab === tab ? mobileStyles.tabActive : {}),
+              }}
+              onClick={() => setMobileTab(tab)}
+            >
+              {tab === 'setup' ? 'SETUP' : tab === 'view' ? 'VIEW' : 'DATA'}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Main scrollable content ── */}
+      <div style={mobileStyles.content}>
+        {appMode === 'tactical' && mobileTab === 'setup' && (
+          <SetupPanel mobile />
+        )}
+
+        {appMode === 'tactical' && mobileTab === 'view' && (
+          <>
+            <div style={{ display: 'flex', gap: 4, padding: '4px 8px', flexShrink: 0 }}>
+              <button
+                style={{ ...mobileStyles.toggleBtn, ...(viewMode === '2d' ? mobileStyles.toggleBtnActive : {}) }}
+                onClick={() => setViewMode('2d')}
+              >2D</button>
+              <button
+                style={{ ...mobileStyles.toggleBtn, ...(viewMode === '3d' ? mobileStyles.toggleBtnActive : {}) }}
+                onClick={() => setViewMode('3d')}
+              >3D</button>
+            </div>
+            {viewMode === '2d'
+              ? <TacticalDisplay mobile />
+              : <TacticalDisplay3D mobile />
+            }
+            <RWRDisplay mobile />
+          </>
+        )}
+
+        {appMode === 'tactical' && mobileTab === 'data' && (
+          <ResultsPanel mobile />
+        )}
+
+        {appMode === 'envelope' && (
+          <EnvelopePlot />
+        )}
+      </div>
+
+      {/* ── Compact playback bar ── */}
+      {appMode === 'tactical' && <PlaybackBar mobile />}
+
+      {/* ── Engagement summary modal ── */}
+      {showSummary && <SimSummaryModal onClose={() => setShowSummary(false)} />}
+    </div>
+  );
+}
+
+// ─── Desktop layout ───────────────────────────────────────────────────────────
+
+function DesktopLayout() {
   const { appMode, setAppMode, setIsPlaying, resetSim, setPlaybackSpeed, setCurrentFrameIdx, simFrames, currentFrameIdx, isPlaying, simStatus, simResult } =
     useSimStore();
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
@@ -133,6 +251,15 @@ export default function App() {
   );
 }
 
+// ─── Root ─────────────────────────────────────────────────────────────────────
+
+export default function App() {
+  const isMobile = useIsMobile();
+  return isMobile ? <MobileLayout /> : <DesktopLayout />;
+}
+
+// ─── Desktop styles ───────────────────────────────────────────────────────────
+
 const styles: Record<string, React.CSSProperties> = {
   root: {
     display: 'flex',
@@ -218,5 +345,102 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     padding: '8px',
     overflowY: 'auto',
+  },
+};
+
+// ─── Mobile styles ────────────────────────────────────────────────────────────
+
+const mobileStyles: Record<string, React.CSSProperties> = {
+  root: {
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100dvh',
+    background: T.bgBase,
+    color: T.text,
+    fontFamily: T.fontUI,
+    overflow: 'hidden',
+    userSelect: 'none',
+    WebkitUserSelect: 'none',
+  },
+  header: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '6px 12px',
+    background: T.bgSurface,
+    borderBottom: `1px solid ${T.border}`,
+    flexShrink: 0,
+  },
+  title: {
+    color: T.accentBright,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 1.5,
+    fontFamily: T.fontUI,
+  },
+  modeRow: {
+    display: 'flex',
+    gap: 4,
+  },
+  modeBtn: {
+    background: 'transparent',
+    border: `1px solid ${T.border}`,
+    color: T.textDim,
+    fontFamily: T.fontUI,
+    fontSize: 10,
+    padding: '5px 12px',
+    borderRadius: 3,
+    cursor: 'pointer',
+  },
+  modeBtnActive: {
+    background: T.bgRaised,
+    borderColor: T.accent,
+    color: T.accentBright,
+  },
+  tabBar: {
+    display: 'flex',
+    background: T.bgSurface,
+    borderBottom: `1px solid ${T.border}`,
+    flexShrink: 0,
+  },
+  tab: {
+    flex: 1,
+    background: 'transparent',
+    border: 'none',
+    borderBottom: '2px solid transparent',
+    color: T.textDim,
+    fontFamily: T.fontUI,
+    fontSize: 11,
+    fontWeight: '600',
+    padding: '9px 0',
+    cursor: 'pointer',
+    letterSpacing: 1,
+    textAlign: 'center' as const,
+  },
+  tabActive: {
+    color: T.accentBright,
+    borderBottomColor: T.accent,
+  },
+  content: {
+    flex: 1,
+    overflow: 'auto',
+    WebkitOverflowScrolling: 'touch',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  toggleBtn: {
+    background: 'transparent',
+    border: `1px solid ${T.border}`,
+    color: T.textDim,
+    fontFamily: T.fontUI,
+    fontSize: 10,
+    padding: '5px 14px',
+    borderRadius: 3,
+    cursor: 'pointer',
+  },
+  toggleBtnActive: {
+    background: T.bgRaised,
+    borderColor: T.accent,
+    color: T.accentBright,
   },
 };

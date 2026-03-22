@@ -8,8 +8,9 @@ A DCS World-accurate missile engagement simulator built with React, TypeScript, 
 - Proportional navigation guidance (range-dependent PN gains from DCS)
 - Mach-dependent 5-coefficient drag model (DCS Cx polar)
 - Multi-phase thrust (boost + sustain from DCS ModelData)
-- 2D tactical display (canvas top-down, 700×700 px)
+- 2D tactical display (canvas top-down, 700×700 px desktop / full-width mobile)
 - 3D engagement view (Three.js free-fly camera)
+- Responsive mobile layout (iPhone portrait, ≤768px — tab-based UI)
 - RWR / MAWS threat display (sector-accurate, emitter labels, threat persistence, Web Audio tones)
 - Launch envelope plot (binary-search Rmax/NEZ/Rmin at each aspect)
 - Missile editor
@@ -43,13 +44,15 @@ src/
 ├── store/
 │   └── simStore.ts            ← Zustand global state (incl. rwrAudioMuted)
 └── ui/
-    ├── App.tsx                ← Root layout
-    ├── SetupPanel.tsx         ← Scenario configuration
-    ├── PlaybackBar.tsx        ← Simulation controls
-    ├── TacticalDisplay.tsx    ← 2D canvas tactical display
-    ├── TacticalDisplay3D.tsx  ← Three.js 3D view
+    ├── App.tsx                ← Root layout (DesktopLayout + MobileLayout, useIsMobile switch)
+    ├── SetupPanel.tsx         ← Scenario configuration (mobile?: boolean → full-width)
+    ├── PlaybackBar.tsx        ← Simulation controls (mobile?: boolean → 2-row compact)
+    ├── TacticalDisplay.tsx    ← 2D canvas tactical display (mobile?: boolean → ResizeObserver)
+    ├── TacticalDisplay3D.tsx  ← Three.js 3D view (mobile?: boolean → 100% width, aspect-ratio:1)
     ├── EnvelopePlot.tsx       ← SVG launch envelope chart
-    ├── RWRDisplay.tsx         ← RWR/MAWS threat scope + audio triggers + mute toggle
+    ├── RWRDisplay.tsx         ← RWR/MAWS threat scope + audio triggers + mute toggle (mobile?: boolean → compact inline row)
+    └── hooks/
+        └── useIsMobile.ts     ← window.innerWidth < 768px detection hook
     ├── MissileEditor.tsx      ← Missile data editor
     └── ComparisonPanel.tsx    ← Multi-engagement comparison table (COMPARE tab)
 tools/
@@ -103,6 +106,29 @@ Per tick:
   13. Ground-strike check (post-burnout)
   12. Accumulate: trail, peak speed/G, distance
 ```
+
+---
+
+## Mobile Layout
+
+**Breakpoint**: `useIsMobile` hook (`src/hooks/useIsMobile.ts`) returns `true` when `window.innerWidth < 768`. This switches `App.tsx` between `DesktopLayout` (unchanged 3-column) and `MobileLayout` (tab-based).
+
+**Mobile tab system** (`simStore.mobileTab`):
+- `'setup'` — full-width `SetupPanel` fills the content area
+- `'view'` — 2D/3D toggle + full-width `TacticalDisplay` + compact inline `RWRDisplay`
+- `'data'` — full-width `ResultsPanel`
+
+**Auto-switching**: `MobileLayout` watches `simStatus` — switches to `'view'` when a simulation starts.
+
+**Responsive canvas** (`TacticalDisplay`): when `mobile=true`, a `ResizeObserver` on the container `div` sets `canvasSize` to the container's pixel width. The canvas `width`/`height` attributes track `canvasSize`; the `scale` (px/nm) is recomputed as `canvasSize / (VIEW_RANGE_NM * 2)`. CSS `width: 100%; height: auto` makes it fill the screen.
+
+**Component `mobile` prop**: All UI components accept an optional `mobile?: boolean` prop. When `true` they replace fixed pixel widths with `width: '100%'` and adjust padding/border/layout for small screens. Desktop callers pass no prop (undefined = desktop).
+
+**Playback bar (mobile)**: 2-row layout — row 1: LAUNCH + play/pause + reset + speed `<select>` + status; row 2: full-width scrubber + time readout.
+
+**RWR (mobile)**: compact horizontal row below the tactical display — smaller `RWRScope` (size=55) + smaller `MAWSRing` (size=26) + status indicators column + mute button. `RWRScope` and `MAWSRing` now accept a `size` prop (default 70 and 32 respectively) that parameterizes their SVG dimensions.
+
+**`100dvh`**: Mobile root uses `height: 100dvh` (dynamic viewport height) to avoid iOS Safari address-bar overlap.
 
 ---
 

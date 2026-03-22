@@ -2,13 +2,8 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { useSimStore } from '../store/simStore';
 import { M_TO_NM, NM_TO_M } from '../physics/atmosphere';
 
-const CANVAS_SIZE = 700;  // px
+const CANVAS_SIZE = 700;  // px (desktop)
 const VIEW_RANGE_NM = 60; // nm visible radius
-const NM_PX = CANVAS_SIZE / (VIEW_RANGE_NM * 2); // pixels per nm
-
-function nmToPx(nm: number): number {
-  return nm * NM_PX;
-}
 
 function worldToCanvas(
   worldX: number,
@@ -23,9 +18,15 @@ function worldToCanvas(
   ];
 }
 
-export default function TacticalDisplay() {
+interface Props {
+  mobile?: boolean;
+}
+
+export default function TacticalDisplay({ mobile }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [profileView, setProfileView] = useState(false);
+  const [canvasSize, setCanvasSize] = useState(mobile ? 360 : CANVAS_SIZE);
   const {
     simFrames, currentFrameIdx, simStatus, appMode,
     maxRangeM, minRangeM, nezM,
@@ -36,16 +37,29 @@ export default function TacticalDisplay() {
     targetAlt: storeTargetAlt,
   } = useSimStore();
 
-  // Toggle profile view on 'P' keypress
+  // Resize canvas to fit container width on mobile
   useEffect(() => {
+    if (!mobile || !containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? 360;
+      setCanvasSize(Math.floor(w));
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [mobile]);
+
+  // Toggle profile view on 'P' keypress (desktop only)
+  useEffect(() => {
+    if (mobile) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === 'p' || e.key === 'P') setProfileView(v => !v);
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [mobile]);
 
-  const scale = NM_PX; // px per nm
+  const effectiveSize = mobile ? canvasSize : CANVAS_SIZE;
+  const scale = effectiveSize / (VIEW_RANGE_NM * 2); // px per nm
 
   // ── Side profile view: range-from-shooter (X) vs altitude (Y) ────────────
   const drawProfile = useCallback(() => {
@@ -164,7 +178,7 @@ export default function TacticalDisplay() {
     // Missile altitude label
     ctx.fillStyle = '#ffaa00';
     ctx.fillText(`MSL ${Math.round(leadMsl.altFt / 1000)}k ft`, mxP + 6, myP - 6);
-  }, [simFrames, currentFrameIdx, simStatus, rangeNm, storeShooterAlt, storeTargetAlt]);
+  }, [simFrames, currentFrameIdx, simStatus, rangeNm, storeShooterAlt, storeTargetAlt, effectiveSize]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -186,7 +200,7 @@ export default function TacticalDisplay() {
     ctx.lineWidth = 0.5;
     ctx.setLineDash([4, 4]);
     for (let r = 10; r <= VIEW_RANGE_NM; r += 10) {
-      const rPx = nmToPx(r);
+      const rPx = r * scale;
       ctx.beginPath();
       ctx.arc(cx, cy, rPx, 0, 2 * Math.PI);
       ctx.stroke();
@@ -368,7 +382,7 @@ export default function TacticalDisplay() {
     ctx.fillStyle = '#ffaa00';
     ctx.fillText(`MSL: ${Math.round(missile.altFt).toLocaleString()} ft`, mx + 8, my - 6);
 
-  }, [simFrames, currentFrameIdx, simStatus, maxRangeM, minRangeM, nezM, rangeNm, aspectAngleDeg, scale, shooterRole]);
+  }, [simFrames, currentFrameIdx, simStatus, maxRangeM, minRangeM, nezM, rangeNm, aspectAngleDeg, scale, shooterRole, effectiveSize]);
 
   useEffect(() => {
     if (profileView) drawProfile();
@@ -390,16 +404,21 @@ export default function TacticalDisplay() {
   }
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div ref={containerRef} style={{ position: 'relative', width: mobile ? '100%' : undefined }}>
       <canvas
         ref={canvasRef}
-        width={CANVAS_SIZE}
-        height={CANVAS_SIZE}
+        width={effectiveSize}
+        height={effectiveSize}
         onClick={handleCanvasClick}
+        onTouchStart={mobile ? (e) => e.preventDefault() : undefined}
+        onTouchMove={mobile ? (e) => e.preventDefault() : undefined}
         style={{
           border: '1px solid #1a3a1a',
           cursor: targetManeuver === 'custom' ? 'crosshair' : 'default',
           display: 'block',
+          width: mobile ? '100%' : undefined,
+          height: mobile ? 'auto' : undefined,
+          touchAction: mobile ? 'none' : undefined,
         }}
       />
       <button

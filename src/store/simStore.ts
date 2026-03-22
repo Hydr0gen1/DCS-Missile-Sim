@@ -89,6 +89,9 @@ interface SimStore {
   // Mode
   appMode: AppMode;
 
+  // Mobile tab (setup | view | data)
+  mobileTab: 'setup' | 'view' | 'data';
+
   // RWR audio
   rwrAudioMuted: boolean;
 
@@ -118,6 +121,7 @@ interface SimStore {
   addMissile: (m: MissileData) => void;
   deleteMissile: (id: string) => void;
   setAppMode: (mode: AppMode) => void;
+  setMobileTab: (tab: 'setup' | 'view' | 'data') => void;
   addTargetWaypoint: (wp: { x: number; y: number }) => void;
   clearTargetWaypoints: () => void;
   addComparisonEntry: (entry: Omit<ComparisonEntry, 'id'>) => void;
@@ -170,6 +174,7 @@ export const useSimStore = create<SimStore>((set) => ({
   shooterStartY: 0,
 
   appMode: 'tactical',
+  mobileTab: 'view',
   rwrAudioMuted: false,
   comparisonEntries: [],
   comparisonNextId: 1,
@@ -222,6 +227,7 @@ export const useSimStore = create<SimStore>((set) => ({
           : s.selectedMissileId,
     })),
   setAppMode: (mode) => set({ appMode: mode }),
+  setMobileTab: (tab) => set({ mobileTab: tab }),
   addTargetWaypoint: (wp) =>
     set((s) => ({ targetWaypoints: [...s.targetWaypoints, wp] })),
   clearTargetWaypoints: () => set({ targetWaypoints: [] }),

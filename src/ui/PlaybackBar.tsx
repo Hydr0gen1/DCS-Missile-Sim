@@ -8,7 +8,11 @@ import { DT } from '../physics/engagement';
 import { fillMissingFields } from '../physics/missile';
 import { stopAllLoops } from '../audio/rwrAudio';
 
-export default function PlaybackBar() {
+interface Props {
+  mobile?: boolean;
+}
+
+export default function PlaybackBar({ mobile }: Props) {
   const store = useSimStore();
   const {
     missiles, aircraft,
@@ -147,6 +151,47 @@ export default function PlaybackBar() {
   const totalTime = simFrames.length > 0 ? simFrames[simFrames.length - 1].time : 0;
   const currentTime = simFrames[currentFrameIdx]?.time ?? 0;
 
+  if (mobile) {
+    return (
+      <div style={mobileBarStyles.container}>
+        {/* Row 1: Launch + controls + speed + status */}
+        <div style={mobileBarStyles.row}>
+          <button style={mobileBarStyles.launchBtn} onClick={handleLaunch}>
+            LAUNCH
+          </button>
+          <button style={mobileBarStyles.btn} onClick={handlePlayPause}>
+            {isPlaying ? '⏸' : '▶'}
+          </button>
+          <button style={mobileBarStyles.btn} onClick={handleReset}>⟳</button>
+          <select
+            style={mobileBarStyles.speedSelect}
+            value={playbackSpeed}
+            onChange={(e) => setPlaybackSpeed(+e.target.value)}
+          >
+            {[1, 2, 4, 8].map((s) => (
+              <option key={s} value={s}>{s}×</option>
+            ))}
+          </select>
+          <span style={{ ...mobileBarStyles.status, color: statusColor(simStatus), marginLeft: 'auto' }}>
+            {statusText(simStatus, simResult?.verdict)}
+          </span>
+        </div>
+        {/* Row 2: Scrubber + time */}
+        <div style={mobileBarStyles.row}>
+          <input
+            type="range"
+            min={0}
+            max={Math.max(0, simFrames.length - 1)}
+            value={currentFrameIdx}
+            onChange={(e) => { setCurrentFrameIdx(+e.target.value); setIsPlaying(false); }}
+            style={{ flex: 1, accentColor: T.accent }}
+          />
+          <span style={mobileBarStyles.time}>T+{currentTime.toFixed(1)}s</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={styles.bar}>
       {/* Launch button */}
@@ -228,6 +273,73 @@ function statusText(s: string, verdict?: string | null): string {
   if (s === 'miss') return verdict ?? 'MISS';
   return s.toUpperCase();
 }
+
+const mobileBarStyles: Record<string, React.CSSProperties> = {
+  container: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 5,
+    padding: '7px 10px',
+    background: T.bgSurface,
+    borderTop: `1px solid ${T.border}`,
+    fontFamily: T.fontUI,
+    fontSize: 11,
+    flexShrink: 0,
+  },
+  row: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+  },
+  launchBtn: {
+    background: '#1a2a10',
+    border: `1px solid ${T.accent}`,
+    color: T.accentBright,
+    fontFamily: T.fontUI,
+    fontSize: 12,
+    fontWeight: '600',
+    padding: '8px 14px',
+    borderRadius: 4,
+    cursor: 'pointer',
+    letterSpacing: 1,
+  },
+  btn: {
+    background: T.bgRaised,
+    border: `1px solid ${T.border}`,
+    color: T.text,
+    fontFamily: T.fontUI,
+    fontSize: 14,
+    padding: '7px 10px',
+    borderRadius: 4,
+    cursor: 'pointer',
+    minWidth: 38,
+    textAlign: 'center' as const,
+  },
+  speedSelect: {
+    background: T.bgRaised,
+    border: `1px solid ${T.border}`,
+    color: T.text,
+    fontFamily: T.fontUI,
+    fontSize: 11,
+    padding: '6px 6px',
+    borderRadius: 3,
+  },
+  status: {
+    fontSize: 10,
+    fontFamily: T.fontMono,
+    letterSpacing: 0.5,
+    fontWeight: '600',
+    whiteSpace: 'nowrap' as const,
+  },
+  time: {
+    color: T.textDim,
+    fontSize: 10,
+    fontFamily: T.fontMono,
+    whiteSpace: 'nowrap' as const,
+    minWidth: 60,
+    textAlign: 'right' as const,
+  },
+};
 
 const styles: Record<string, React.CSSProperties> = {
   bar: {

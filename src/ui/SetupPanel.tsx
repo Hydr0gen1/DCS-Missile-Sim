@@ -10,7 +10,11 @@ const label = (text: string, tip: string) => (
   <label title={tip} style={styles.label}>{text}</label>
 );
 
-export default function SetupPanel() {
+interface Props {
+  mobile?: boolean;
+}
+
+export default function SetupPanel({ mobile }: Props) {
   const store = useSimStore();
   const {
     aircraft, missiles,
@@ -60,7 +64,7 @@ export default function SetupPanel() {
   const loftEnabled = manualLoftAngle_deg !== undefined && manualLoftAngle_deg !== null;
 
   return (
-    <div style={styles.panel}>
+    <div style={mobile ? { ...styles.panel, width: '100%', borderRight: 'none', boxSizing: 'border-box' } : styles.panel}>
       <div style={styles.section}>
         <div style={styles.sectionTitle}>SHOOTER</div>
         {/* Role toggle */}
