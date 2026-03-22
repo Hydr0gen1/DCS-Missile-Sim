@@ -1,6 +1,7 @@
 import { useSimStore } from '../store/simStore';
 import { M_TO_NM } from '../physics/atmosphere';
 import { T } from './theme';
+import type { ComparisonResult } from '../store/simStore';
 
 const G = 9.80665;
 
@@ -9,7 +10,7 @@ interface Props {
 }
 
 export default function ResultsPanel({ mobile }: Props) {
-  const { simResult, simError, simStatus, simFrames, currentFrameIdx } = useSimStore();
+  const { simResult, simError, simStatus, simFrames, currentFrameIdx, comparisonResults } = useSimStore();
 
   const frame = simFrames[currentFrameIdx];
 
@@ -96,12 +97,56 @@ export default function ResultsPanel({ mobile }: Props) {
           <Row label="TOF" value={`${simResult.timeOfFlight.toFixed(1)} s`} />
           <Row label="TERM SPD" value={`M${simResult.terminalSpeedMach.toFixed(2)}`} />
           <Row label="MAX SPD" value={`M${simResult.maxSpeedMach.toFixed(2)}`} />
+          <Row label="MAX ALT" value={`${Math.round(simResult.maxAltitudeFt).toLocaleString()} ft`} />
           <Row label="MAX G" value={`${simResult.maxGLoad.toFixed(1)}G`} />
           <Row label="DIST" value={`${simResult.distanceTraveledNm.toFixed(1)} nm`} />
           {!simResult.hit && (
             <Row label="MISS DIST" value={`${simResult.missDistance.toFixed(0)} m`} />
           )}
           <Row label="F-POLE" value={`${simResult.fPoleNm.toFixed(1)} nm`} />
+        </div>
+      )}
+
+      {/* Comparison table — shown when multi-missile comparison was run */}
+      {comparisonResults.length > 1 && (
+        <div style={styles.section}>
+          <div style={styles.sectionTitle}>COMPARISON</div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', fontSize: 9, fontFamily: T.fontMono, borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>MSL</th>
+                  <th style={styles.th}>HIT</th>
+                  <th style={styles.th}>Pk</th>
+                  <th style={styles.th}>TOF</th>
+                  <th style={styles.th}>MAX M</th>
+                  <th style={styles.th}>TERM M</th>
+                  <th style={styles.th}>MAX ALT</th>
+                  <th style={styles.th}>MAX G</th>
+                  <th style={styles.th}>DIST</th>
+                  <th style={styles.th}>F-POLE</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparisonResults.map((cr: ComparisonResult) => (
+                  <tr key={cr.missileId}>
+                    <td style={{ ...styles.td, color: cr.color }}>● {cr.missileName}</td>
+                    <td style={{ ...styles.td, color: cr.result.hit ? T.success : T.danger }}>
+                      {cr.result.hit ? 'Y' : 'N'}
+                    </td>
+                    <td style={styles.td}>{(cr.result.pk * 100).toFixed(0)}%</td>
+                    <td style={styles.td}>{cr.result.timeOfFlight.toFixed(1)}s</td>
+                    <td style={styles.td}>M{cr.result.maxSpeedMach.toFixed(1)}</td>
+                    <td style={styles.td}>M{cr.result.terminalSpeedMach.toFixed(1)}</td>
+                    <td style={styles.td}>{Math.round(cr.result.maxAltitudeFt / 1000)}k</td>
+                    <td style={styles.td}>{cr.result.maxGLoad.toFixed(0)}G</td>
+                    <td style={styles.td}>{cr.result.distanceTraveledNm.toFixed(1)}</td>
+                    <td style={styles.td}>{cr.result.fPoleNm.toFixed(1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -210,5 +255,22 @@ const styles: Record<string, React.CSSProperties> = {
     height: 1,
     background: T.borderDim,
     margin: '4px 0',
+  },
+  th: {
+    padding: '3px 4px',
+    color: T.textDim,
+    fontSize: 8,
+    letterSpacing: 0.5,
+    textAlign: 'left' as const,
+    borderBottom: `1px solid ${T.border}`,
+    whiteSpace: 'nowrap' as const,
+  },
+  td: {
+    padding: '3px 4px',
+    fontSize: 9,
+    color: T.text,
+    borderBottom: `1px solid ${T.borderDim}`,
+    whiteSpace: 'nowrap' as const,
+    fontFamily: T.fontMono,
   },
 };

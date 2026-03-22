@@ -9,6 +9,21 @@ import type { ShooterManeuverType } from '../data/types';
 export type AppMode = 'tactical' | 'envelope' | 'editor' | 'compare';
 export type ShooterRole = 'aircraft' | 'ground';
 
+export const COMPARISON_COLORS = [
+  '#ff8800',  // orange (primary missile color)
+  '#00ccff',  // cyan
+  '#ff44ff',  // magenta
+  '#44ff44',  // lime green
+];
+
+export interface ComparisonResult {
+  missileId: string;
+  missileName: string;
+  color: string;
+  frames: SimFrame[];
+  result: EngagementResult;
+}
+
 export interface ComparisonEntry {
   id: number;
   label: string;           // auto-generated: missile name + key params
@@ -23,6 +38,7 @@ export interface ComparisonEntry {
   hit: boolean;
   timeOfFlight: number;
   terminalSpeedMach: number;
+  maxAltitudeFt: number;
   missDistance: number;
   fPoleNm: number;
   aPoleNm: number;
@@ -102,6 +118,11 @@ interface SimStore {
   comparisonEntries: ComparisonEntry[];
   comparisonNextId: number;
 
+  // Simultaneous multi-missile comparison mode
+  comparisonMode: boolean;
+  comparisonMissileIds: string[];      // up to 4 missile IDs to compare simultaneously
+  comparisonResults: ComparisonResult[]; // results from last comparison run
+
   // Actions
   setMissiles: (m: MissileData[]) => void;
   updateMissile: (id: string, patch: Partial<MissileData>) => void;
@@ -131,6 +152,9 @@ interface SimStore {
   removeComparisonEntry: (id: number) => void;
   clearComparisonEntries: () => void;
   setRwrAudioMuted: (v: boolean) => void;
+  setComparisonMode: (on: boolean) => void;
+  setComparisonMissileIds: (ids: string[]) => void;
+  setComparisonResults: (results: ComparisonResult[]) => void;
 }
 
 export const useSimStore = create<SimStore>((set) => ({
@@ -182,6 +206,9 @@ export const useSimStore = create<SimStore>((set) => ({
   rwrAudioMuted: false,
   comparisonEntries: [],
   comparisonNextId: 1,
+  comparisonMode: false,
+  comparisonMissileIds: [],
+  comparisonResults: [],
 
   setMissiles: (m) => set({ missiles: m }),
   updateMissile: (id, patch) =>
@@ -246,4 +273,7 @@ export const useSimStore = create<SimStore>((set) => ({
     set((s) => ({ comparisonEntries: s.comparisonEntries.filter((e) => e.id !== id) })),
   clearComparisonEntries: () => set({ comparisonEntries: [] }),
   setRwrAudioMuted: (v) => set({ rwrAudioMuted: v }),
+  setComparisonMode: (on) => set({ comparisonMode: on, comparisonResults: [] }),
+  setComparisonMissileIds: (ids) => set({ comparisonMissileIds: ids }),
+  setComparisonResults: (results) => set({ comparisonResults: results }),
 }));

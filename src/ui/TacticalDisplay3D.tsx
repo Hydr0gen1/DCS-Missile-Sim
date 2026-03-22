@@ -342,6 +342,7 @@ function SceneContent() {
     shooterAlt: storeShooterAlt,
     targetAlt: storeTargetAlt,
     simVersion,
+    comparisonResults,
   } = useSimStore();
 
   const frame = simFrames[currentFrameIdx];
@@ -490,8 +491,8 @@ function SceneContent() {
         );
       })}
 
-      {/* Missile trails (lead = bright orange, secondaries = darker) */}
-      {allTrails.map((pts, i) =>
+      {/* Missile trails (lead = bright orange, secondaries = darker) — normal mode only */}
+      {comparisonResults.length <= 1 && allTrails.map((pts, i) =>
         pts.length >= 2 && (
           <Line
             key={`trail-${i}`}
@@ -501,6 +502,18 @@ function SceneContent() {
           />
         )
       )}
+
+      {/* Comparison mode: one trail per missile, color-coded */}
+      {comparisonResults.length > 1 && comparisonResults.map((cr) => {
+        const crFrame = cr.frames[Math.min(currentFrameIdx, cr.frames.length - 1)];
+        if (!crFrame) return null;
+        const msl = crFrame.missiles?.[0] ?? crFrame.missile;
+        if (!msl || msl.trail.length < 2) return null;
+        const pts = msl.trail.map(({ x, y, alt }) => worldTo3D(x, y, alt));
+        return (
+          <Line key={cr.missileId} points={pts as [number,number,number][]} color={cr.color} lineWidth={2.5} />
+        );
+      })}
 
       {/* Countermeasures (flares = yellow, chaff = cyan) */}
       {frame?.countermeasures?.map((cm) => {
@@ -523,7 +536,7 @@ function SceneContent() {
 // ─── HUD overlay ─────────────────────────────────────────────────────────────
 
 function HUDOverlay({ mobile }: { mobile?: boolean }) {
-  const { simFrames, currentFrameIdx, simStatus, simResult } = useSimStore();
+  const { simFrames, currentFrameIdx, simStatus, simResult, comparisonResults } = useSimStore();
   const frame = simFrames[currentFrameIdx];
 
   const isDone = simStatus === 'hit' || simStatus === 'miss';
@@ -588,6 +601,16 @@ function HUDOverlay({ mobile }: { mobile?: boolean }) {
           {!simResult.hit && simResult.missDistance < 200 && (
             <div style={hud.row}><span style={hud.dim}>CPA </span>{simResult.missDistance.toFixed(1)}<span style={hud.unit}>m</span></div>
           )}
+        </>
+      )}
+      {comparisonResults.length > 1 && (
+        <>
+          <div style={hud.sep} />
+          {comparisonResults.map((cr) => (
+            <div key={cr.missileId} style={{ fontSize: 9, color: cr.color, lineHeight: 1.6 }}>
+              ● {cr.missileName} — {cr.result.hit ? 'HIT' : 'MISS'} Pk{(cr.result.pk * 100).toFixed(0)}%
+            </div>
+          ))}
         </>
       )}
       <div style={hud.sep} />

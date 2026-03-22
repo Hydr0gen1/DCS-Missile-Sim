@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useSimStore } from '../store/simStore';
+import { useSimStore, COMPARISON_COLORS } from '../store/simStore';
 import type { ShooterRole } from '../store/simStore';
 import type { ManeuverType } from '../physics/aircraft';
 import type { ShooterManeuverType } from '../data/types';
@@ -25,7 +25,8 @@ export default function SetupPanel({ mobile }: Props) {
     rangeNm, aspectAngleDeg, selectedMissileId,
     shooterManeuver, salvoCount, salvoInterval_s,
     lockTime_s, manualLoftAngle_deg, salvoMissileIds,
-    setScenario,
+    comparisonMode, comparisonMissileIds,
+    setScenario, setComparisonMode, setComparisonMissileIds,
   } = store;
 
   const shooterAircraft = aircraft.find((a) => a.id === shooterAircraftId);
@@ -297,98 +298,171 @@ export default function SetupPanel({ mobile }: Props) {
       <div style={styles.section}>
         <div style={styles.sectionTitle}>MISSILE</div>
 
-        {/* Salvo sub-box */}
-        <div style={styles.salvoBox}>
-          <div style={styles.cmTitle}>SALVO</div>
-          {label(`Count: ${salvoCount} missile${salvoCount > 1 ? 's' : ''}`, 'Number of missiles launched in salvo (1-4)')}
-          <input type="range" min={1} max={4} step={1} value={salvoCount}
-            onChange={(e) => setScenario({ salvoCount: +e.target.value })}
-            style={styles.slider} />
-          {salvoCount > 1 && (
-            <>
-              {label(`Interval: ${salvoInterval_s.toFixed(1)} s`, 'Time between missile launches')}
-              <input type="range" min={0.5} max={10} step={0.5} value={salvoInterval_s}
-                onChange={(e) => setScenario({ salvoInterval_s: +e.target.value })}
-                style={styles.slider} />
-              {/* Per-slot missile selectors for mixed salvo */}
-              {Array.from({ length: salvoCount - 1 }, (_, i) => (
-                <div key={i} style={{ marginTop: 4 }}>
-                  {label(`Slot ${i + 2}`, `Missile type for salvo slot ${i + 2} (null = same as primary)`)}
-                  <select
-                    style={styles.select}
-                    value={salvoMissileIds[i] ?? 'same'}
-                    onChange={(e) => {
-                      const newIds = [...salvoMissileIds];
-                      newIds[i] = e.target.value === 'same' ? null : e.target.value;
-                      setScenario({ salvoMissileIds: newIds });
-                    }}
-                  >
-                    <option value="same">Same as primary</option>
-                    {availableMissiles.map((ms) => (
-                      <option key={ms.id} value={ms.id}>{ms.name}</option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-            </>
-          )}
-        </div>
-
-        <select
-          style={styles.select}
-          value={selectedMissileId}
-          onChange={(e) => setScenario({ selectedMissileId: e.target.value })}
+        {/* Compare mode toggle */}
+        <label
+          title="Launch multiple different missiles simultaneously against the same target for side-by-side comparison. Replaces salvo mode."
+          style={{ ...styles.label, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, cursor: 'pointer' }}
         >
-          {grouped.ARH.length > 0 && (
-            <optgroup label="ARH — Active Radar">
-              {grouped.ARH.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}{m.isSynthetic ? ' [SYNTHETIC]' : ''}{getMissingFields(m).length > 0 ? ' ⚠' : ''}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {grouped.SARH.length > 0 && (
-            <optgroup label="SARH — Semi-Active Radar">
-              {grouped.SARH.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}{m.isSynthetic ? ' [SYNTHETIC]' : ''}{getMissingFields(m).length > 0 ? ' ⚠' : ''}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {grouped.IR.length > 0 && (
-            <optgroup label="IR — Infrared">
-              {grouped.IR.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}{m.isSynthetic ? ' [SYNTHETIC]' : ''}{getMissingFields(m).length > 0 ? ' ⚠' : ''}
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </select>
+          <input
+            type="checkbox"
+            checked={comparisonMode}
+            onChange={(e) => {
+              const on = e.target.checked;
+              setComparisonMode(on);
+              if (on && comparisonMissileIds.length === 0) {
+                setComparisonMissileIds([selectedMissileId]);
+              }
+            }}
+            style={{ accentColor: T.accent }}
+          />
+          Compare Missiles
+        </label>
 
-        {selectedMissile?.isSynthetic && (
-          <div style={styles.warningBox}>
-            ⚠ SYNTHETIC TEST ROUND — not a real weapon. For development use only.
+        {comparisonMode ? (
+          /* ── Comparison mode: per-slot missile selectors ── */
+          <div style={styles.salvoBox}>
+            <div style={styles.cmTitle}>COMPARE SLOTS</div>
+            {comparisonMissileIds.map((id, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: i === 0 ? 0 : 4 }}>
+                <span style={{ color: COMPARISON_COLORS[i % COMPARISON_COLORS.length], fontSize: 14, lineHeight: 1, flexShrink: 0 }}>●</span>
+                <select
+                  style={{ ...styles.select, marginTop: 0, flex: 1 }}
+                  value={id}
+                  onChange={(e) => {
+                    const next = [...comparisonMissileIds];
+                    next[i] = e.target.value;
+                    setComparisonMissileIds(next);
+                  }}
+                >
+                  {grouped.ARH.length > 0 && (
+                    <optgroup label="ARH">
+                      {grouped.ARH.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    </optgroup>
+                  )}
+                  {grouped.SARH.length > 0 && (
+                    <optgroup label="SARH">
+                      {grouped.SARH.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    </optgroup>
+                  )}
+                  {grouped.IR.length > 0 && (
+                    <optgroup label="IR">
+                      {grouped.IR.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    </optgroup>
+                  )}
+                </select>
+                {comparisonMissileIds.length > 1 && (
+                  <button
+                    style={{ background: 'transparent', border: 'none', color: T.textDim, cursor: 'pointer', fontSize: 14, padding: '0 2px', lineHeight: 1 }}
+                    onClick={() => setComparisonMissileIds(comparisonMissileIds.filter((_, j) => j !== i))}
+                    title="Remove slot"
+                  >×</button>
+                )}
+              </div>
+            ))}
+            {comparisonMissileIds.length < 4 && (
+              <button
+                style={{ ...styles.presetBtn, marginTop: 6 }}
+                onClick={() => setComparisonMissileIds([...comparisonMissileIds, availableMissiles[0]?.id ?? selectedMissileId])}
+              >
+                + Add Slot
+              </button>
+            )}
           </div>
-        )}
+        ) : (
+          /* ── Normal mode: salvo + single missile selector ── */
+          <>
+            <div style={styles.salvoBox}>
+              <div style={styles.cmTitle}>SALVO</div>
+              {label(`Count: ${salvoCount} missile${salvoCount > 1 ? 's' : ''}`, 'Number of missiles launched in salvo (1-4)')}
+              <input type="range" min={1} max={4} step={1} value={salvoCount}
+                onChange={(e) => setScenario({ salvoCount: +e.target.value })}
+                style={styles.slider} />
+              {salvoCount > 1 && (
+                <>
+                  {label(`Interval: ${salvoInterval_s.toFixed(1)} s`, 'Time between missile launches')}
+                  <input type="range" min={0.5} max={10} step={0.5} value={salvoInterval_s}
+                    onChange={(e) => setScenario({ salvoInterval_s: +e.target.value })}
+                    style={styles.slider} />
+                  {Array.from({ length: salvoCount - 1 }, (_, i) => (
+                    <div key={i} style={{ marginTop: 4 }}>
+                      {label(`Slot ${i + 2}`, `Missile type for salvo slot ${i + 2} (null = same as primary)`)}
+                      <select
+                        style={styles.select}
+                        value={salvoMissileIds[i] ?? 'same'}
+                        onChange={(e) => {
+                          const newIds = [...salvoMissileIds];
+                          newIds[i] = e.target.value === 'same' ? null : e.target.value;
+                          setScenario({ salvoMissileIds: newIds });
+                        }}
+                      >
+                        <option value="same">Same as primary</option>
+                        {availableMissiles.map((ms) => (
+                          <option key={ms.id} value={ms.id}>{ms.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
 
-        {!canSim && missing.length > 0 && (
-          <div style={styles.errorBox}>
-            Missing data: {missing.join(', ')}
-            <br />Use Missile Editor to populate.
-          </div>
-        )}
+            <select
+              style={styles.select}
+              value={selectedMissileId}
+              onChange={(e) => setScenario({ selectedMissileId: e.target.value })}
+            >
+              {grouped.ARH.length > 0 && (
+                <optgroup label="ARH — Active Radar">
+                  {grouped.ARH.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}{m.isSynthetic ? ' [SYNTHETIC]' : ''}{getMissingFields(m).length > 0 ? ' ⚠' : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {grouped.SARH.length > 0 && (
+                <optgroup label="SARH — Semi-Active Radar">
+                  {grouped.SARH.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}{m.isSynthetic ? ' [SYNTHETIC]' : ''}{getMissingFields(m).length > 0 ? ' ⚠' : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {grouped.IR.length > 0 && (
+                <optgroup label="IR — Infrared">
+                  {grouped.IR.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}{m.isSynthetic ? ' [SYNTHETIC]' : ''}{getMissingFields(m).length > 0 ? ' ⚠' : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
 
-        {selectedMissile && (
-          <div style={styles.missileInfo}>
-            <div>Type: <span style={{ color: typeColor(selectedMissile.type) }}>{selectedMissile.type}</span></div>
-            <div>Seeker: {selectedMissile.seeker}</div>
-            <div>Max Range: {selectedMissile.maxRange_nm !== null ? `${selectedMissile.maxRange_nm} nm` : '—'}</div>
-            <div>Max Speed: {selectedMissile.maxSpeed_mach !== null ? `M${selectedMissile.maxSpeed_mach}` : '—'}</div>
-            <div>G-Limit: {selectedMissile.gLimit !== null ? `${selectedMissile.gLimit}G` : '—'}</div>
-          </div>
+            {selectedMissile?.isSynthetic && (
+              <div style={styles.warningBox}>
+                ⚠ SYNTHETIC TEST ROUND — not a real weapon. For development use only.
+              </div>
+            )}
+
+            {!canSim && missing.length > 0 && (
+              <div style={styles.errorBox}>
+                Missing data: {missing.join(', ')}
+                <br />Use Missile Editor to populate.
+              </div>
+            )}
+
+            {selectedMissile && (
+              <div style={styles.missileInfo}>
+                <div>Type: <span style={{ color: typeColor(selectedMissile.type) }}>{selectedMissile.type}</span></div>
+                <div>Seeker: {selectedMissile.seeker}</div>
+                <div>Max Range: {selectedMissile.maxRange_nm !== null ? `${selectedMissile.maxRange_nm} nm` : '—'}</div>
+                <div>Max Speed: {selectedMissile.maxSpeed_mach !== null ? `M${selectedMissile.maxSpeed_mach}` : '—'}</div>
+                <div>G-Limit: {selectedMissile.gLimit !== null ? `${selectedMissile.gLimit}G` : '—'}</div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

@@ -158,6 +158,7 @@ export interface EngagementResult {
   seductionEvents: CMEvent[];
   maxSpeedMach: number;       // peak missile speed in Mach
   maxGLoad: number;           // peak lateral G-load
+  maxAltitudeFt: number;      // peak missile altitude during flight (ft)
   distanceTraveledNm: number; // total missile path length in nm
   targetExitSpeedKts: number;   // target speed at end of engagement (kts)
   shooterExitSpeedKts: number;  // shooter speed at end of engagement (kts)
@@ -311,6 +312,7 @@ export function runSimulation(cfg: ScenarioConfig): {
           seductionEvents: [],
           maxSpeedMach: 0,
           maxGLoad: 0,
+          maxAltitudeFt: cfg.shooterAlt,
           distanceTraveledNm: 0,
           targetExitSpeedKts: cfg.targetSpeed,
           shooterExitSpeedKts: cfg.shooterSpeed,
@@ -432,6 +434,7 @@ export function runSimulation(cfg: ScenarioConfig): {
   let peakSpeedMs = 0;
   let altAtPeakSpeed = cfg.shooterAlt;
   let peakGLoad = 0;
+  let peakAltFt = cfg.shooterAlt;
   let distanceTraveledM = 0;
 
   // Countermeasure state
@@ -1072,6 +1075,7 @@ export function runSimulation(cfg: ScenarioConfig): {
       peakSpeedMs = newSpeed3D;
       altAtPeakSpeed = newAlt;
     }
+    if (newAlt > peakAltFt) peakAltFt = newAlt;
 
     // --- Step shooter (post-launch maneuver) ---
     if (isGroundLaunched) {
@@ -1428,6 +1432,7 @@ export function runSimulation(cfg: ScenarioConfig): {
     seductionEvents,
     maxSpeedMach: peakSpeedMs / speedOfSound(altAtPeakSpeed),
     maxGLoad: peakGLoad,
+    maxAltitudeFt: peakAltFt,
     distanceTraveledNm: distanceTraveledM * M_TO_NM,
     targetExitSpeedKts: targetState.speedMs / 0.514444,
     shooterExitSpeedKts: shooterState.speedMs / 0.514444,
