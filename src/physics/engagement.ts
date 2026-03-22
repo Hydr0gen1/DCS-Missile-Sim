@@ -253,20 +253,11 @@ function computeLoftAltitude(
   // Seduced: hold current altitude (no guidance)
   if (isSeduced) return mzM;
 
-  // No loft profile → always steer to real target altitude
-  if (loftAngle <= 0) return tzActual;
-
-  // Terminal zone: real target altitude — PN dives to intercept
-  if (horizDist <= effectiveDescentM) return tzActual;
-
-  // Post-loft glide zone: linearly descend from missile's current altitude
-  // to target altitude, reaching it at the descent range boundary.
-  // This replaces the old "tzActual + loftSin * horizDist" formula which
-  // returned 180,000+ ft virtual targets, causing PN to command a climb
-  // throughout the entire coast phase.
-  const glideSpan = Math.max(1, effectiveTriggerM * 2 - effectiveDescentM);
-  const gp = Math.max(0, Math.min(1, 1.0 - (horizDist - effectiveDescentM) / glideSpan));
-  return mzM + (tzActual - mzM) * gp;
+  // All other cases: steer to real target altitude.
+  // PN computes the correct intercept trajectory including the dive.
+  // No gradual blend needed — PN handles altitude correction naturally,
+  // and the altitude differential converts to kinetic energy during descent.
+  return tzActual;
 }
 
 /** Run full engagement simulation, returns all frames */
