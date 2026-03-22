@@ -173,6 +173,10 @@ export interface RadarConfig {
   maxRange_nm: number;
   referenceRCS_m2: number;
   gimbalLimit_deg: number;
+  /** Effective detection range (nm) in look-down mode (target below shooter altitude).
+   *  Pulse-Doppler clutter limits this below the flat-look maxRange_nm.
+   *  If absent, maxRange_nm is used for all geometries. */
+  lookDownRange_nm?: number;
   scanTime_s: number;
   twsAccuracy_m: number;
   sttAccuracy_m: number;

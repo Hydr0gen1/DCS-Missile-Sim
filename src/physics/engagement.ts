@@ -576,7 +576,12 @@ export function runSimulation(cfg: ScenarioConfig): {
     // --- Radar detection timeline (shooter radar → target search & lock) ---
     if (shooterRadar && !searchDetected) {
       const s2tRange = Math.hypot(targetState.x - shooterState.x, targetState.y - shooterState.y);
-      const detectRange = shooterRadar.maxRange_nm * NM_TO_M *
+      // Use look-down range cap when target is below shooter (pulse-Doppler clutter limit)
+      const targetBelowShooter = targetState.altFt < shooterState.altFt;
+      const baseRange_nm = (targetBelowShooter && shooterRadar.lookDownRange_nm != null)
+        ? Math.min(shooterRadar.maxRange_nm, shooterRadar.lookDownRange_nm)
+        : shooterRadar.maxRange_nm;
+      const detectRange = baseRange_nm * NM_TO_M *
         Math.pow(Math.max(targetRcs / shooterRadar.referenceRCS_m2, 0.01), 0.25);
       if (s2tRange <= detectRange) {
         searchDetected = true;

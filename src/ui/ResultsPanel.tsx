@@ -4,14 +4,22 @@ import { T } from './theme';
 
 const G = 9.80665;
 
-export default function ResultsPanel() {
+interface Props {
+  mobile?: boolean;
+}
+
+export default function ResultsPanel({ mobile }: Props) {
   const { simResult, simError, simStatus, simFrames, currentFrameIdx } = useSimStore();
 
   const frame = simFrames[currentFrameIdx];
 
+  const panelStyle = mobile
+    ? { ...styles.panel, width: '100%', borderLeft: 'none', boxSizing: 'border-box' as const }
+    : styles.panel;
+
   if (simError) {
     return (
-      <div style={styles.panel}>
+      <div style={panelStyle}>
         <div style={styles.title}>ENGAGEMENT STATUS</div>
         <div style={styles.error}>{simError}</div>
       </div>
@@ -19,7 +27,7 @@ export default function ResultsPanel() {
   }
 
   return (
-    <div style={styles.panel}>
+    <div style={panelStyle}>
       <div style={styles.title}>ENGAGEMENT STATUS</div>
 
       {/* Live telemetry during playback */}

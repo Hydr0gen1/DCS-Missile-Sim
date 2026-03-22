@@ -23,11 +23,6 @@ import {
   stopAllLoops,
 } from '../audio/rwrAudio';
 
-const R = 70;          // scope radius px
-const CX = R + 10;     // center x
-const CY = R + 10;     // center y
-const SIZE = (R + 10) * 2;
-
 const THREAT_COLORS: Record<string, string> = {
   search:  T.textDim,
   track:   T.typeSARH,
@@ -35,15 +30,6 @@ const THREAT_COLORS: Record<string, string> = {
   active:  T.danger,
   maws:    T.accent,   // orange — MAWS passive IR detection
 };
-
-function bearing2xy(bearing: number, radius: number): [number, number] {
-  // bearing 0 = nose (up on scope), 90 = right
-  const rad = (bearing - 90) * Math.PI / 180;
-  return [
-    CX + Math.cos(rad) * radius,
-    CY + Math.sin(rad) * radius,
-  ];
-}
 
 /** Priority rank for selecting the "most dangerous" threat for the diamond */
 function threatPriority(t: RWRThreat): number {
@@ -54,7 +40,17 @@ function threatPriority(t: RWRThreat): number {
   return 0; // maws = lowest priority (passive IR, not a radar spike)
 }
 
-function RWRScope({ threats }: { threats: RWRThreat[] }) {
+function RWRScope({ threats, size = 70 }: { threats: RWRThreat[]; size?: number }) {
+  const R = size;
+  const CX = R + 10;
+  const CY = R + 10;
+  const SIZE = (R + 10) * 2;
+
+  function bearing2xy(bearing: number, radius: number): [number, number] {
+    const rad = (bearing - 90) * Math.PI / 180;
+    return [CX + Math.cos(rad) * radius, CY + Math.sin(rad) * radius];
+  }
+
   // Pick highest-priority threat for the diamond overlay
   const priority = threats.reduce<RWRThreat | null>((best, t) =>
     best === null || threatPriority(t) > threatPriority(best) ? t : best, null);
@@ -94,7 +90,6 @@ function RWRScope({ threats }: { threats: RWRThreat[] }) {
         const isPriority = priority === t;
         return (
           <g key={i}>
-            {/* Priority diamond outline around the most dangerous contact */}
             {isPriority && (
               <polygon
                 points={`${dotX},${dotY - 7} ${dotX + 7},${dotY} ${dotX},${dotY + 7} ${dotX - 7},${dotY}`}
@@ -105,7 +100,6 @@ function RWRScope({ threats }: { threats: RWRThreat[] }) {
                 style={isActive ? { animation: 'rwr-blink 0.6s step-start infinite' } : undefined}
               />
             )}
-            {/* Contact dot at bearing */}
             <circle
               cx={dotX} cy={dotY} r={isActive ? 4 : 3}
               fill={color}
@@ -129,9 +123,9 @@ function RWRScope({ threats }: { threats: RWRThreat[] }) {
   );
 }
 
-function MAWSRing({ sectors, hasMaws }: { sectors: MAWSSector[]; hasMaws: boolean }) {
-  const mr = 32; // ring radius
-  const mc = 44; // center
+function MAWSRing({ sectors, hasMaws, size = 32 }: { sectors: MAWSSector[]; hasMaws: boolean; size?: number }) {
+  const mr = size; // ring radius
+  const mc = size + 12; // center
   const totalSize = mc * 2;
   const SECTOR_LABELS = ['F', 'FR', 'R', 'RR', 'A', 'RL', 'L', 'FL'];
   const activeSectors = new Set(sectors.map(s => s.sectorIdx));
@@ -187,7 +181,11 @@ function MAWSRing({ sectors, hasMaws }: { sectors: MAWSSector[]; hasMaws: boolea
   );
 }
 
-export default function RWRDisplay() {
+interface RWRDisplayProps {
+  mobile?: boolean;
+}
+
+export default function RWRDisplay({ mobile }: RWRDisplayProps) {
   const { simFrames, currentFrameIdx, targetHasMaws, isPlaying, rwrAudioMuted, setRwrAudioMuted } = useSimStore();
   const frame = simFrames[currentFrameIdx];
   const rwr = frame?.rwr;
@@ -293,6 +291,38 @@ export default function RWRDisplay() {
 
     prevThreatsRef.current = radarThreats;
   }, [radarThreats, isPlaying, rwrAudioMuted]);
+
+  if (mobile) {
+    return (
+      <div style={mobileRwrStyles.wrapper}>
+        <style>{`
+          @keyframes rwr-blink {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0; }
+          }
+        `}</style>
+        <RWRScope threats={radarThreats} size={55} />
+        <MAWSRing sectors={mawsSectors} hasMaws={targetHasMaws} size={26} />
+        <div style={mobileRwrStyles.indicators}>
+          <span style={{ color: radarWarning ? T.typeSARH : T.textFaint, fontSize: 9 }}>
+            {radarWarning ? '◆ RDR' : '◇ RDR'}
+          </span>
+          <span style={{ color: launchWarning ? T.danger : T.textFaint, fontSize: 9 }}>
+            {launchWarning ? '▲ LCH' : '△ LCH'}
+          </span>
+          <span style={{ color: mawsWarning ? T.accent : T.textFaint, fontSize: 9 }}>
+            {mawsWarning ? '● MWS' : '○ MWS'}
+          </span>
+          <button
+            style={{ ...styles.muteBtn, fontSize: 8, padding: '2px 4px', marginTop: 2 }}
+            onClick={() => { ensureAudio(); setRwrAudioMuted(!rwrAudioMuted); }}
+          >
+            {rwrAudioMuted ? '🔇' : '🔊'}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.panel}>
@@ -408,5 +438,26 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 7,
     color: T.textFaint,
     letterSpacing: 0.5,
+  },
+};
+
+const mobileRwrStyles: Record<string, React.CSSProperties> = {
+  wrapper: {
+    display: 'flex',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: '5px 8px',
+    background: T.bgSurface,
+    borderTop: `1px solid ${T.border}`,
+    flexShrink: 0,
+  },
+  indicators: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 3,
+    fontFamily: T.fontMono,
+    letterSpacing: 0.5,
+    marginLeft: 4,
   },
 };

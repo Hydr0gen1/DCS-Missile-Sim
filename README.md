@@ -2,6 +2,8 @@
 
 A browser-based air-to-air and surface-to-air missile engagement simulator built on physics data extracted directly from DCS World's Lua datamine. Simulate 96 real missiles with accurate drag, thrust, proportional navigation, RWR/MAWS behaviour, countermeasures, and full 3D flight paths — no installation required beyond `npm`.
 
+Works on desktop and on iPhone (portrait, 375 px+).
+
 ---
 
 ## Quick Start
@@ -17,14 +19,16 @@ Then open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ## Interface Overview
 
-The app has four tabs, selectable from the top navigation bar:
+The app has four tabs selectable from the top navigation bar (desktop) or the compact header (mobile):
 
 | Tab | Purpose |
 |-----|---------|
-| **TACTICAL** | Run and replay an engagement, view 2D/3D flight paths, RWR display |
+| **TACTICAL** | Run and replay an engagement, view 2D/3D flight paths, RWR/MAWS display |
 | **ENVELOPE** | Plot the missile's kinematic engagement envelope across all aspect angles |
 | **MISSILE EDITOR** | Create, edit, duplicate, and delete missiles |
 | **COMPARE** | Multi-engagement comparison table with sortable columns and CSV export |
+
+On phones (≤ 768 px wide) the TACTICAL tab is further divided into three sub-tabs: **SETUP**, **VIEW**, and **DATA**. The sim auto-switches to VIEW when you press LAUNCH.
 
 ---
 
@@ -32,15 +36,15 @@ The app has four tabs, selectable from the top navigation bar:
 
 ### Setting Up a Scenario
 
-**SHOOTER panel (left)**
+**SHOOTER panel**
 
 1. Toggle between **AIRCRAFT** and **GROUND** at the top of the panel.
-   - *Aircraft*: choose the shooter aircraft, altitude (ft), speed (kts), and heading.
-   - *Ground*: sets shooter speed to 0; configure site altitude (0–2,000 ft) and SAM radar lock time (0–12 s). Heading is auto-aimed at the target.
-2. Select the **missile** from the loadout dropdown. Missiles are grouped by type (ARH / IR / SARH).
-3. Configure **salvo** options: fire 1–4 missiles at configurable intervals. When salvo count > 1, each additional slot can be assigned a different missile for a mixed salvo.
+   - *Aircraft*: choose shooter aircraft, altitude (ft), speed (kts), and heading.
+   - *Ground*: shooter speed is 0; configure site altitude (0–2,000 ft) and SAM radar lock time (0–12 s, simulates radar acquisition before launch). Heading is auto-aimed at the target.
+2. Select the **missile** from the loadout dropdown. Missiles are grouped by type (ARH / SARH / IR).
+3. Configure **salvo** options: fire 1–4 missiles at configurable intervals. Each slot can be assigned a different missile for a mixed salvo.
 4. Set a **post-launch shooter maneuver** (aircraft mode only): crank left/right, pump, or drag cold to work the F-pole.
-5. Optionally enable **manual loft** and set the loft angle override.
+5. Optionally enable **manual loft angle** to override the missile's default loft.
 
 **TARGET panel**
 
@@ -52,7 +56,7 @@ The app has four tabs, selectable from the top navigation bar:
    - *None* — straight and level
    - *Crank* — 50° off the threat bearing at 3G
    - *Notch* — beam aspect + 100 ft/s descent (defeats Doppler)
-   - *Break Turn* — maximum-G turn perpendicular to missile (9G)
+   - *Break Turn* — maximum-G turn perpendicular to the missile (9G)
 
    *Dogfight maneuvers* (opponent-referenced — use with **Dogfight Preset**):
    - *Pursuit* — turn toward opponent's 6 o'clock (7G)
@@ -61,19 +65,20 @@ The app has four tabs, selectable from the top navigation bar:
    - *Break Into* — hard turn directly toward the opponent (9G)
    - *Extend* — disengage and fly away (2G)
 
-4. Set **chaff** and **flare** salvo counts. IR missiles have a gimbal limit — if the target goes cold and outruns the seeker's FOV, lock is lost.
+4. Set **chaff** and **flare** salvo counts.
+5. Enable **React on Detect** to have the target wait for an RWR/MAWS cue before maneuvering (ARH: react at pitbull; SARH: react at STT lock; IR + MAWS: react on motor plume detection).
 
 **GEOMETRY panel**
 
-- **Range** — launch range in nautical miles (0.5 nm minimum, 0.5 nm steps)
+- **Range** — launch range in nautical miles
 - **Aspect** — 0° = target nose-on (hot); 180° = tail-on (cold)
-- **Dogfight Preset** button — sets up a short-range, co-altitude, 180° aspect scenario suitable for WVR engagements
+- **Dogfight Preset** button — short-range, co-altitude, 180° aspect, suitable for WVR engagements
 
 ### Running the Simulation
 
-Click **LAUNCH** in the playback bar at the bottom. The engagement computes instantly and begins playing back automatically.
+Click **LAUNCH** in the playback bar. The engagement computes instantly and begins replaying automatically.
 
-**Playback controls:**
+**Playback controls (desktop):**
 
 | Control | Action |
 |---------|--------|
@@ -83,93 +88,99 @@ Click **LAUNCH** in the playback bar at the bottom. The engagement computes inst
 | `1×` `2×` `4×` `8×` buttons | Set playback speed |
 | Timeline scrubber | Jump to any moment in the engagement |
 
-### Reading the Display
+**Playback controls (mobile):** LAUNCH, play/pause, reset, and a speed drop-down in the top row; full-width scrubber + elapsed time in the row below.
 
-**2D view** shows a top-down tactical picture:
+### Reading the 2D Display
+
+Top-down tactical picture (north up):
+
 - Blue aircraft / SAM icon = shooter; red aircraft = target
 - Orange dot + trail = missile (lead); darker orange = secondary salvo missiles
-- Dashed velocity vectors show heading and speed
+- Dashed velocity vectors show 5 s of projected travel
 - Yellow squares = flares; cyan squares = chaff
-- Green ring = Rmax, amber dashed ring = NEZ, red ring = Rmin
-- Press **P** (or the `[PLAN]` / `[PROFILE]` button) to toggle between plan view (top-down) and profile view (range vs altitude)
+- Green ring = Rmax, amber dashed ring = NEZ, red ring = Rmin (centred on the target)
 
-**3D view** (toggle with the **2D** / **3D** buttons above the display) — drag to orbit, scroll to zoom, right-drag to pan:
-- Aircraft render as spheres with a heading line showing 2.5 s of travel ahead
-- Shooter path trail (cyan) and target path trail (magenta) drawn from flight history
-- Lead missile trail (bright orange, 2.5 px); secondary salvo missile trails (darker orange, 1.8 px)
-- Countermeasure objects rendered as small boxes
+Press **P** (or the `[PLAN]` / `[PROFILE]` button) to toggle between **plan view** (top-down) and **profile view** (range-from-shooter vs altitude). Profile view shows loft trajectories, SAM climb profiles, and altitude differentials.
 
-**RWR display (bottom-right)**:
-- SARH: continuous illumination strobe from the shooter bearing
-- ARH: dim *SEARCH* strobe before pitbull; bright *ACTIVE* strobe from the missile bearing once the seeker is active
-- IR: normally silent; IR missiles with datalink show a track strobe during mid-course guidance
-- Aircraft with MAWS (e.g., A-10C II) show an orange sector warning for motor plume detections
-- Fading contacts remain visible for 6 s after the emitter disappears
-- Click the mute button to silence RWR audio tones
+### Reading the 3D Display
 
-**Results panel** (right side, live during playback):
-- Live: elapsed time, range, closure rate, TTI, missile speed/G, target altitude/speed
-- After impact: verdict, Pk, max G, max speed, distance traveled, time of flight, terminal Mach, miss distance
+Switch with the **2D** / **3D** buttons. Drag to orbit, scroll to zoom, right-drag to pan.
 
-**Engagement Summary** modal pops up when the simulation ends. Re-open it at any time with the **RESULTS** button. It includes exit conditions, detection timeline, and full outcome details.
+- Aircraft render as coloured spheres with a heading line showing 2.5 s of travel ahead
+- Shooter trail (cyan) and target trail (magenta) drawn from flight history
+- Lead missile trail (bright orange, 2.5 px); secondary salvo missile trails (darker, 1.8 px)
+- Countermeasure objects rendered as small boxes (yellow = flares, cyan = chaff)
+
+### RWR / MAWS Display
+
+The RWR scope shows radar-guided threats from the target's perspective. On desktop it sits in the bottom-right panel; on mobile it appears as a compact row below the tactical display.
+
+| Threat type | Appearance | Audio |
+|-------------|-----------|-------|
+| SARH continuous illumination | Amber strobe from shooter bearing | Repeating lock tone |
+| ARH pre-pitbull (shooter FCR) | Dim search strobe | Periodic ping |
+| ARH post-pitbull (missile seeker) | Bright blinking active strobe from missile bearing | Launch warble |
+| IR with datalink mid-course | Track strobe during mid-course only | Lock tone |
+| MAWS motor plume (equipped aircraft) | Orange sector flash in MAWS ring | MAWS alarm |
+
+- Contacts fade over 6 s after the emitter goes silent (persistence)
+- A diamond outline marks the highest-priority contact
+- Click the mute button (🔊 / 🔇) to silence RWR audio tones
+
+### Results Panel
+
+Live telemetry during playback (range, closure, TTI, missile speed/G, altitudes) plus final outcome: verdict, Pk, max G, max speed, time of flight, terminal Mach, miss distance, F-pole, A-pole.
+
+The **Engagement Summary** modal pops up automatically when the simulation ends. Re-open it with the **RESULTS** button.
 
 ---
 
 ## ENVELOPE Tab
 
-Plots the missile's kinematic Rmax, NEZ, and Rmin across all aspect angles (0°–180°) for the current shooter/target/altitude/speed configuration. Updates whenever you change scenario parameters.
+Plots Rmax, NEZ, and Rmin across all aspect angles (0°–180°) for the current shooter/target/altitude/speed configuration. Updates whenever scenario parameters change.
 
 ---
 
 ## MISSILE EDITOR Tab
 
-### Editing an Existing Missile
-
-Select a missile from the dropdown at the top. All fields are editable in real time:
+Select a missile from the dropdown to edit its parameters in real time:
 
 | Field group | Fields |
 |---|---|
-| Identity | Name, Type (ARH/SARH/IR), Seeker description |
-| Propulsion | Motor Burn Time, Thrust, Launch Mass, Burnout Mass |
-| Aerodynamics | Drag Coefficient, Reference Area |
-| Performance | Max Speed (Mach), Max Range (nm), G-Limit |
-| Guidance | Seeker Acquisition Range, Loft Angle, ProNav Constant (N) |
-| Countermeasures | CM Vulnerability (`ccm_k0`) |
+| Identity | Name, type (ARH/SARH/IR), seeker description |
+| Propulsion | Motor burn time, thrust, launch mass, burnout mass |
+| Aerodynamics | Drag coefficient, reference area |
+| Performance | Max speed (Mach), max range (nm), G-limit |
+| Guidance | Seeker acquisition range, loft angle, ProNav constant (N) |
+| Countermeasures | CM vulnerability (`ccm_k0`) |
 
-Fields highlighted in red are required. Fields left blank use built-in fallbacks where possible.
-
-### Creating / Duplicating / Deleting
-
-- **NEW** — choose a template (short/medium/long-range IR/ARH/SARH/SAM/MANPAD), edit, then click **CREATE**
+- **NEW** — choose a template (short/medium/long-range IR/ARH/SARH/SAM/MANPAD), edit, click **CREATE**
 - **DUPE** — copies the selected missile (appends `(Copy)`)
-- **DELETE** — confirmation prompt; disabled when only one missile remains
-
-### Import / Export
-
-- **EXPORT** downloads the full missile list as `missiles.json`
-- **IMPORT** replaces the list from a `missiles.json` file
+- **DELETE** — confirmation prompt
+- **EXPORT** — downloads the full missile list as `missiles.json`
+- **IMPORT** — replaces the list from a `missiles.json` file
 
 ---
 
 ## COMPARE Tab
 
-Add engagements to the comparison table with the **Add Current** button. Columns include missile, maneuver, range, aspect, Pk, hit, TOF, terminal Mach, miss distance, F-pole, and verdict. Click any column header to sort. **Export CSV** downloads the full table.
+Add the current engagement with **Add Current**. Columns: missile, maneuver, range, aspect, Pk, hit, TOF, terminal Mach, miss distance, F-pole, A-pole, verdict. Click any column header to sort. **Export CSV** downloads the full table.
 
 ---
 
 ## Missile Types
 
-| Type | Seeker | RWR signature | Chaff / Flare effectiveness |
-|------|--------|---------------|-----------------------------|
-| **ARH** | Active radar (fire-and-forget) | Search → Active strobe at pitbull | Chaff effective; flares ineffective |
-| **SARH** | Semi-active radar (requires illumination) | Continuous illumination strobe | Chaff effective (especially in notch); flares ineffective |
-| **IR** | Infrared | Silent (no RWR) — or track strobe if datalink-equipped | Flares effective; chaff ineffective |
+| Type | Seeker | RWR signature | Countermeasures |
+|------|--------|---------------|-----------------|
+| **ARH** | Active radar — fire and forget | Search strobe → Active strobe at pitbull | Chaff effective; flares ineffective |
+| **SARH** | Semi-active — requires continuous illumination | Illumination strobe throughout flight | Chaff effective (especially in notch); flares ineffective |
+| **IR** | Infrared heat seeker | Silent — or track strobe if datalink-equipped | Flares effective; chaff ineffective |
 
-IR missiles have a seeker gimbal limit. If the target maneuvers outside the seeker's field of view (±45° for AIM-9M, ±75° for R-73, ±90° for AIM-9X), the missile loses lock and goes ballistic. Wide-angle imaging seekers (AIM-9X, Python-5) get a 1.5 s grace period before lock breaks.
+**IR seeker limits:** if the target maneuvers outside the seeker FOV (AIM-9M ±45°, R-73 ±75°, AIM-9X ±90°), the missile loses lock and goes ballistic. Wide-angle imaging seekers (AIM-9X, Python-5) get a 1.5 s grace period and can re-acquire if the target returns to FOV.
 
 ---
 
-## Keyboard Shortcuts
+## Keyboard Shortcuts (Desktop)
 
 | Key | Action |
 |-----|--------|
@@ -183,17 +194,32 @@ IR missiles have a seeker gimbal limit. If the target maneuvers outside the seek
 
 ## Physics Model
 
-- **Drag**: Mach-dependent 5-coefficient DCS Cx polar (`k0`–`k4`) with wave-crisis transonic peak
-- **Thrust**: multi-phase motor model (boost + sustain from DCS ModelData propulsion phases)
-- **Guidance**: true 3D proportional navigation with LOS angular velocity vector `Ω = (R×V_rel)/|R|²`; range-dependent PN gains for some missiles (e.g., SD-10)
-- **Loft**: range-gated loft trajectory using DCS trigger/descent ranges; SAMs use a steep vertical-launch profile for the first 20% of burn
-- **Atmosphere**: two-layer ISA model (troposphere + stratosphere) for air density and speed of sound
-- **Hit detection**: segment-vs-segment closest point of approach (CPA) across both missile and target paths; 12 m kill radius
-- **Countermeasures**: DCS k3–k11 Doppler seduction model for chaff/flares
+| System | Implementation |
+|--------|---------------|
+| **Drag** | Mach-dependent 5-coefficient DCS Cx polar (k0–k4) with transonic wave-crisis peak |
+| **Thrust** | Multi-phase motor model (boost + sustain) extracted from DCS ModelData propulsion tables |
+| **Guidance** | True 3D proportional navigation: `Ω = (R×V_rel)/|R|²`, `a_cmd = −N·Vc·(V̂×Ω)`; range-dependent PN gains (e.g., SD-10, PL-12) |
+| **Loft** | Range-gated using DCS trigger/descent ranges; SAMs use a steep vertical-launch phase for the first 20% of burn |
+| **Atmosphere** | Two-layer ISA model (troposphere + stratosphere) for air density and speed of sound |
+| **Hit detection** | Segment-vs-segment CPA across both missile and target paths each tick; 12 m kill radius |
+| **Countermeasures** | DCS k3–k11 Doppler seduction model for chaff/flares |
+| **Gravity bias** | Autopilot adds +G to the vertical channel every tick so the missile holds altitude at baseline; PN provides corrections relative to level flight |
+
+---
 
 ## Data Source
 
-Missile parameters are extracted from the [Quaggles DCS Lua Datamine](https://github.com/Quaggles/dcs-lua-datamine) using `tools/dcs_data_extractor.py`. The resulting `src/data/missiles.json` contains 96 A2A and SAM missiles with full DCS-accurate aerodynamics, propulsion, guidance, and seeker data.
+Missile parameters are extracted from the [Quaggles DCS Lua Datamine](https://github.com/Quaggles/dcs-lua-datamine) using `tools/dcs_data_extractor.py`. The resulting `src/data/missiles.json` contains 96 A2A and SAM missiles with DCS-accurate aerodynamics, propulsion, guidance, seeker, and DLZ data.
+
+To update after a DCS patch:
+
+```bash
+cd datamine && git pull && cd ..
+python tools/dcs_data_extractor.py --datamine-path ./datamine --output ./src/data/missiles.json --update --diff
+npm run build
+```
+
+---
 
 ## Tech Stack
 
@@ -201,3 +227,4 @@ Missile parameters are extracted from the [Quaggles DCS Lua Datamine](https://gi
 - **Zustand** — global state management
 - **React Three Fiber** / **Three.js** + **@react-three/drei** — 3D tactical view
 - Fixed-timestep physics loop (dt = 50 ms)
+- Responsive layout: desktop 3-column + mobile tab-based (≤ 768 px)
