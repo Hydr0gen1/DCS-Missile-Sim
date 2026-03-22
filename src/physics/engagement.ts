@@ -287,6 +287,12 @@ export function runSimulation(cfg: ScenarioConfig): {
 
   const isGroundLaunched = cfg.shooterRole === 'ground';
 
+  // For ground mode the SAM's tracking radar IS the RWR emitter. Override the shooter
+  // aircraft's rwrSymbol with the missile's rwrSymbol so computeRWR shows the correct code.
+  if (isGroundLaunched && m.rwrSymbol && cfg.shooterAircraftData) {
+    cfg.shooterAircraftData = { ...cfg.shooterAircraftData, rwrSymbol: m.rwrSymbol };
+  }
+
   // ── IR pre-launch seeker validation ────────────────────────────────────────
   // Short-range IR missiles need a seeker lock before launch.
   // IR+datalink missiles (R-27ET, MICA-IR) fly on INS+datalink mid-course like ARH;

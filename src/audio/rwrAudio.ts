@@ -12,8 +12,13 @@
 let ctx: AudioContext | null = null;
 
 export function initRWRAudio(): void {
-  if (ctx) return;
-  ctx = new AudioContext();
+  if (!ctx) {
+    ctx = new AudioContext();
+  }
+  // Always try to resume — iOS Safari may suspend even an existing context
+  if (ctx.state === 'suspended') {
+    ctx.resume().catch(() => undefined);
+  }
 }
 
 function getCtx(): AudioContext | null {

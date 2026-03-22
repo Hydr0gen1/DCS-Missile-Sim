@@ -1991,7 +1991,8 @@
     "maxSpeed_mach": 1.8,
     "maxRange_nm": 2.27,
     "dataSource": "old_api_estimated",
-    "killDistance_m": 5
+    "killDistance_m": 5,
+    "isSAM": true
   },
   {
     "id": "sa9m333",
@@ -2115,7 +2116,8 @@
     "maxSpeed_mach": 2.0,
     "maxRange_nm": 2.7,
     "dataSource": "old_api_estimated",
-    "killDistance_m": 5
+    "killDistance_m": 5,
+    "isSAM": true
   },
   {
     "id": "igla-1e",
@@ -2254,7 +2256,8 @@
     "maxSpeed_mach": 2.2,
     "maxRange_nm": 2.43,
     "dataSource": "old_api_estimated",
-    "killDistance_m": 1
+    "killDistance_m": 1,
+    "isSAM": true
   },
   {
     "id": "gar-8",
@@ -3691,7 +3694,8 @@
     "maxSpeed_mach": 2.2,
     "maxRange_nm": 3.24,
     "dataSource": "old_api_estimated",
-    "killDistance_m": 3
+    "killDistance_m": 3,
+    "isSAM": true
   },
   {
     "id": "fim-92c",
@@ -3830,7 +3834,8 @@
     "maxSpeed_mach": 2.2,
     "maxRange_nm": 3.24,
     "dataSource": "old_api_estimated",
-    "killDistance_m": 3
+    "killDistance_m": 3,
+    "isSAM": true
   },
   {
     "id": "mica-t",
@@ -4071,7 +4076,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.5,
     "maxRange_nm": 4.59,
-    "killDistance_m": 8
+    "killDistance_m": 8,
+    "isSAM": true
   },
   {
     "id": "mmagicii",
@@ -4321,7 +4327,8 @@
     "maxSpeed_mach": 2.5,
     "maxRange_nm": 3.24,
     "dataSource": "old_api_estimated",
-    "killDistance_m": 6
+    "killDistance_m": 6,
+    "isSAM": true
   },
   {
     "id": "pl-5eii",
@@ -6876,7 +6883,9 @@
     "maxSpeed_mach": 2.2,
     "maxRange_nm": 13.5,
     "dataSource": "old_api_estimated",
-    "killDistance_m": 15
+    "killDistance_m": 15,
+    "isSAM": true,
+    "rwrSymbol": "6"
   },
   {
     "id": "sa48h6e2",
@@ -6998,7 +7007,9 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 8.6,
     "maxRange_nm": 80.99,
-    "killDistance_m": 25
+    "killDistance_m": 25,
+    "isSAM": true,
+    "rwrSymbol": "S6"
   },
   {
     "id": "sa5b27",
@@ -7122,7 +7133,9 @@
     "maxSpeed_mach": 2.2,
     "maxRange_nm": 13.5,
     "dataSource": "old_api_estimated",
-    "killDistance_m": 40
+    "killDistance_m": 40,
+    "isSAM": true,
+    "rwrSymbol": "3"
   },
   {
     "id": "sa5v28",
@@ -7256,7 +7269,9 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 5.8,
     "maxRange_nm": 129.59,
-    "killDistance_m": 45
+    "killDistance_m": 45,
+    "isSAM": true,
+    "rwrSymbol": "5"
   },
   {
     "id": "sa5b55",
@@ -7378,13 +7393,15 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 6.0,
     "maxRange_nm": 40.5,
-    "killDistance_m": 25
+    "killDistance_m": 25,
+    "isSAM": true,
+    "rwrSymbol": "10"
   },
   {
     "id": "9m317",
     "name": "9M317",
     "dcsName": "9M317",
-    "type": "SARH",
+    "type": "ARH",
     "source": "dcs-lua-datamine",
     "sourceFile": "_G/rockets/9M317.lua",
     "dcsVersion": "43530a30 2026-02-11 22:21:43 +1000",
@@ -7513,7 +7530,11 @@
     "maxSpeed_mach": 3.6,
     "maxRange_nm": 22.68,
     "dataSource": "old_api_estimated",
-    "killDistance_m": 20
+    "killDistance_m": 20,
+    "isSAM": true,
+    "rwrSymbol": "11",
+    "hasIOG": true,
+    "hasDatalink": true
   },
   {
     "id": "sa9m33",
@@ -7637,7 +7658,9 @@
     "maxSpeed_mach": 2.1,
     "maxRange_nm": 5.56,
     "dataSource": "old_api_estimated",
-    "killDistance_m": 10
+    "killDistance_m": 10,
+    "isSAM": true,
+    "rwrSymbol": "8"
   },
   {
     "id": "sa9m330",
@@ -7761,7 +7784,9 @@
     "maxSpeed_mach": 3.0,
     "maxRange_nm": 6.48,
     "dataSource": "old_api_estimated",
-    "killDistance_m": 12
+    "killDistance_m": 12,
+    "isSAM": true,
+    "rwrSymbol": "15"
   },
   {
     "id": "sa9m338k",
@@ -7884,7 +7909,9 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.0,
     "maxRange_nm": 8.64,
-    "killDistance_m": 12
+    "killDistance_m": 12,
+    "isSAM": true,
+    "rwrSymbol": "15"
   },
   {
     "id": "sa9m38m1",
@@ -8012,7 +8039,9 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.4,
     "maxRange_nm": 24.84,
-    "killDistance_m": 20
+    "killDistance_m": 20,
+    "isSAM": true,
+    "rwrSymbol": "11"
   },
   {
     "id": "aim-7e",
@@ -9210,7 +9239,9 @@
     "maxSpeed_mach": 3.5,
     "maxRange_nm": 30.24,
     "dataSource": "old_api_estimated",
-    "killDistance_m": 15
+    "killDistance_m": 15,
+    "isSAM": true,
+    "rwrSymbol": "SD"
   },
   {
     "id": "hhq-9",
@@ -9348,7 +9379,9 @@
     "loftAngle_deg": 38.3,
     "maxSpeed_mach": 8.6,
     "maxRange_nm": 80.99,
-    "killDistance_m": 25
+    "killDistance_m": 25,
+    "isSAM": true,
+    "rwrSymbol": "H9"
   },
   {
     "id": "hq-16",
@@ -9488,7 +9521,9 @@
     "loftAngle_deg": 44.4,
     "maxSpeed_mach": 3.5,
     "maxRange_nm": 24.3,
-    "killDistance_m": 15
+    "killDistance_m": 15,
+    "isSAM": true,
+    "rwrSymbol": "16"
   },
   {
     "id": "sa-iris-t-sl",
@@ -9616,7 +9651,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.0,
     "maxRange_nm": 21.6,
-    "killDistance_m": 8
+    "killDistance_m": 8,
+    "isSAM": true
   },
   {
     "id": "mim-104",
@@ -9738,7 +9774,9 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 5.0,
     "maxRange_nm": 64.79,
-    "killDistance_m": 20
+    "killDistance_m": 20,
+    "isSAM": true,
+    "rwrSymbol": "P"
   },
   {
     "id": "hawk-raketa",
@@ -9866,7 +9904,9 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.3,
     "maxRange_nm": 21.6,
-    "killDistance_m": 18
+    "killDistance_m": 18,
+    "isSAM": true,
+    "rwrSymbol": "H"
   },
   {
     "id": "p-24r",
@@ -10861,7 +10901,9 @@
     "loftAngle_deg": 9.8,
     "maxSpeed_mach": 3.0,
     "maxRange_nm": 14.85,
-    "killDistance_m": 12
+    "killDistance_m": 12,
+    "isSAM": true,
+    "rwrSymbol": "SS"
   },
   {
     "id": "rs2us",
@@ -11365,7 +11407,9 @@
     "maxSpeed_mach": 2.6,
     "maxRange_nm": 16.2,
     "dataSource": "old_api_estimated",
-    "killDistance_m": 60
+    "killDistance_m": 60,
+    "isSAM": true,
+    "rwrSymbol": "2"
   },
   {
     "id": "sm-1",
@@ -11493,7 +11537,9 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.0,
     "maxRange_nm": 27.54,
-    "killDistance_m": 15
+    "killDistance_m": 15,
+    "isSAM": true,
+    "rwrSymbol": "SM"
   },
   {
     "id": "sm-2",
@@ -11621,7 +11667,9 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 4.0,
     "maxRange_nm": 39.96,
-    "killDistance_m": 20
+    "killDistance_m": 20,
+    "isSAM": true,
+    "rwrSymbol": "SM"
   },
   {
     "id": "sm-2er",
@@ -11755,13 +11803,15 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 5.0,
     "maxRange_nm": 97.19,
-    "killDistance_m": 20
+    "killDistance_m": 20,
+    "isSAM": true,
+    "rwrSymbol": "SM"
   },
   {
     "id": "sm-6",
     "name": "SM-6",
     "dcsName": "SM_6",
-    "type": "SARH",
+    "type": "ARH",
     "source": "dcs-lua-datamine",
     "sourceFile": "_G/rockets/SM_6.lua",
     "dcsVersion": "43530a30 2026-02-11 22:21:43 +1000",
@@ -11889,7 +11939,9 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 5.0,
     "maxRange_nm": 97.19,
-    "killDistance_m": 20
+    "killDistance_m": 20,
+    "hasIOG": true,
+    "hasDatalink": true
   },
   {
     "id": "matra-super-530d",
@@ -12158,6 +12210,8 @@
     "maxSpeed_mach": 2.0,
     "maxRange_nm": 4.32,
     "dataSource": "old_api_estimated",
-    "killDistance_m": 8
+    "killDistance_m": 8,
+    "isSAM": true,
+    "rwrSymbol": "R"
   }
 ]

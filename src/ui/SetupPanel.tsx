@@ -31,12 +31,14 @@ export default function SetupPanel({ mobile }: Props) {
 
   const shooterAircraft = aircraft.find((a) => a.id === shooterAircraftId);
 
-  // Compute available missiles based on shooter aircraft loadout (ground mode = all)
+  // Compute available missiles based on shooter role:
+  // - Ground: SAMs only (isSAM=true)
+  // - Aircraft: A2A missiles only (isSAM falsy), filtered by loadout if defined
   const availableMissiles = (() => {
-    if (shooterRole === 'ground') return missiles;
+    if (shooterRole === 'ground') return missiles.filter((m) => m.isSAM);
     const compat = shooterAircraft?.compatibleMissiles;
-    if (!compat) return missiles; // undefined = no restriction (Generic)
-    return missiles.filter((m) => compat.includes(m.id));
+    const pool = compat ? missiles.filter((m) => compat.includes(m.id)) : missiles;
+    return pool.filter((m) => !m.isSAM);
   })();
 
   // Auto-select first compatible missile when aircraft changes or role switches
@@ -49,12 +51,11 @@ export default function SetupPanel({ mobile }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shooterAircraftId, shooterRole]);
 
-  // Group missiles by type for optgroups, sorted alphabetically within group
-  const grouped = {
-    ARH: availableMissiles.filter((m) => m.type === 'ARH').sort((a, b) => a.name.localeCompare(b.name)),
-    SARH: availableMissiles.filter((m) => m.type === 'SARH').sort((a, b) => a.name.localeCompare(b.name)),
-    IR: availableMissiles.filter((m) => m.type === 'IR').sort((a, b) => a.name.localeCompare(b.name)),
-  };
+  // Group missiles by type for optgroups, sorted alphabetically within group.
+  // availableMissiles is already role-filtered (SAMs for ground, A2A for aircraft).
+  const byType = (type: string) =>
+    availableMissiles.filter((m) => m.type === type).sort((a, b) => a.name.localeCompare(b.name));
+  const grouped = { ARH: byType('ARH'), SARH: byType('SARH'), IR: byType('IR') };
 
   const selectedMissile = missiles.find((m) => m.id === selectedMissileId);
   // Use fillMissingFields so SAMs with rich DCS data don't show spurious warnings
@@ -263,7 +264,7 @@ export default function SetupPanel({ mobile }: Props) {
           DOGFIGHT PRESET
         </button>
         {label(`Range: ${rangeNm.toFixed(1)} nm`, 'Initial range between shooter and target at launch')}
-        <input type="range" min={0.5} max={80} step={0.5} value={rangeNm}
+        <input type="range" min={0.5} max={200} step={0.5} value={rangeNm}
           onChange={(e) => setScenario({ rangeNm: +e.target.value })}
           style={styles.slider} />
 
@@ -411,32 +412,66 @@ export default function SetupPanel({ mobile }: Props) {
               value={selectedMissileId}
               onChange={(e) => setScenario({ selectedMissileId: e.target.value })}
             >
-              {grouped.ARH.length > 0 && (
-                <optgroup label="ARH — Active Radar">
-                  {grouped.ARH.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}{m.isSynthetic ? ' [SYNTHETIC]' : ''}{getMissingFields(m).length > 0 ? ' ⚠' : ''}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {grouped.SARH.length > 0 && (
-                <optgroup label="SARH — Semi-Active Radar">
-                  {grouped.SARH.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}{m.isSynthetic ? ' [SYNTHETIC]' : ''}{getMissingFields(m).length > 0 ? ' ⚠' : ''}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {grouped.IR.length > 0 && (
-                <optgroup label="IR — Infrared">
-                  {grouped.IR.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}{m.isSynthetic ? ' [SYNTHETIC]' : ''}{getMissingFields(m).length > 0 ? ' ⚠' : ''}
-                    </option>
-                  ))}
-                </optgroup>
+              {shooterRole === 'ground' ? (
+                <>
+                  {grouped.SARH.length > 0 && (
+                    <optgroup label="SAM — Radar Guided">
+                      {grouped.SARH.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}{getMissingFields(m).length > 0 ? ' ⚠' : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {grouped.ARH.length > 0 && (
+                    <optgroup label="SAM — Active Radar">
+                      {grouped.ARH.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}{getMissingFields(m).length > 0 ? ' ⚠' : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {grouped.IR.length > 0 && (
+                    <optgroup label="SAM — IR / MANPAD">
+                      {grouped.IR.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}{getMissingFields(m).length > 0 ? ' ⚠' : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </>
+              ) : (
+                <>
+                  {grouped.ARH.length > 0 && (
+                    <optgroup label="ARH — Active Radar">
+                      {grouped.ARH.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}{m.isSynthetic ? ' [SYNTHETIC]' : ''}{getMissingFields(m).length > 0 ? ' ⚠' : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {grouped.SARH.length > 0 && (
+                    <optgroup label="SARH — Semi-Active Radar">
+                      {grouped.SARH.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}{m.isSynthetic ? ' [SYNTHETIC]' : ''}{getMissingFields(m).length > 0 ? ' ⚠' : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {grouped.IR.length > 0 && (
+                    <optgroup label="IR — Infrared">
+                      {grouped.IR.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}{m.isSynthetic ? ' [SYNTHETIC]' : ''}{getMissingFields(m).length > 0 ? ' ⚠' : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </>
               )}
             </select>
 

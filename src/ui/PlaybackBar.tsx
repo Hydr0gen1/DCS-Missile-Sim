@@ -7,7 +7,7 @@ import { KTS_TO_MS } from '../physics/atmosphere';
 import type { ScenarioConfig } from '../physics/engagement';
 import { DT } from '../physics/engagement';
 import { fillMissingFields } from '../physics/missile';
-import { stopAllLoops } from '../audio/rwrAudio';
+import { initRWRAudio, stopAllLoops } from '../audio/rwrAudio';
 
 interface Props {
   mobile?: boolean;
@@ -109,6 +109,7 @@ export default function PlaybackBar({ mobile }: Props) {
   }
 
   function handleLaunch() {
+    initRWRAudio(); // iOS Safari: create/resume AudioContext inside user gesture
     stopAllLoops();
     // Don't call resetSim() — setSimFrames already clears all state and increments simVersion
     // in a single atomic update. Calling resetSim() first caused a double simVersion bump and
@@ -185,6 +186,7 @@ export default function PlaybackBar({ mobile }: Props) {
   }
 
   function handlePlayPause() {
+    initRWRAudio(); // also resume audio context on play (iOS may re-suspend)
     if (simFrames.length === 0) return;
     if (currentFrameIdx >= simFrames.length - 1) {
       setCurrentFrameIdx(0);
