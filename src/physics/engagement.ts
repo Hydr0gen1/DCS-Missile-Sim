@@ -965,8 +965,9 @@ export function runSimulation(cfg: ScenarioConfig): {
     const energyFrac = Math.min(1, newSpeed3D / maxSpeedMsNow);
 
     // Check total 3D speed (not just horizontal) to avoid false termination
-    // during steep climb phase of SAMs
-    if (newSpeed3D < 50) {
+    // during steep climb phase of SAMs. Guard: skip during first 3 seconds to let
+    // ground-launched missiles accelerate from zero.
+    if (newSpeed3D < 50 && time > 3.0) {
       missReason = 'insufficient energy';
       const fdx = shooterState.x - newTarget.x;
       const fdy = shooterState.y - newTarget.y;
@@ -1286,7 +1287,7 @@ export function runSimulation(cfg: ScenarioConfig): {
         if (!slot.seduced && sCpa < KILL_RADIUS_M) {
           slot.done = true;
         }
-        if (sNewSpeed < 50 || (sNewAlt <= 0 && sNewVz < 0)) {
+        if ((sNewSpeed < 50 && slot.tFlight > 3.0) || (sNewAlt <= 0 && sNewVz < 0)) {
           slot.done = true;
         }
 
