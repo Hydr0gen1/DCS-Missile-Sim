@@ -920,9 +920,17 @@ export function runSimulation(cfg: ScenarioConfig): {
     let vhx3D: number, vhy3D: number, vhz3D: number;
     if (speed3D < 1.0) {
       const launchRad = (initialHeadingDeg * Math.PI) / 180;
-      vhx3D = Math.sin(launchRad);
-      vhy3D = Math.cos(launchRad);
-      vhz3D = 0;
+      if (isGroundLaunched) {
+        const climbRad = (80 * Math.PI) / 180;
+        const hFrac = Math.cos(climbRad);
+        vhx3D = Math.sin(launchRad) * hFrac;
+        vhy3D = Math.cos(launchRad) * hFrac;
+        vhz3D = Math.sin(climbRad);
+      } else {
+        vhx3D = Math.sin(launchRad);
+        vhy3D = Math.cos(launchRad);
+        vhz3D = 0;
+      }
     } else {
       vhx3D = missileState.vx / safeDenom;
       vhy3D = missileState.vy / safeDenom;
@@ -1228,9 +1236,28 @@ export function runSimulation(cfg: ScenarioConfig): {
         const sFDrag = dragForce(sSpeed3D, slot.state.altFt, sECd, sArea);
         const sInvMass = 1 / sCurrentMass;
         const sSafe = Math.max(sSpeed3D, 0.001);
-        const sTAx = sThrustForce * sInvMass * (slot.state.vx / sSafe);
-        const sTAy = sThrustForce * sInvMass * (slot.state.vy / sSafe);
-        const sTAz = sThrustForce * sInvMass * (slot.state.vz / sSafe);
+        let sVhx: number, sVhy: number, sVhz: number;
+        if (sSpeed3D < 1.0) {
+          const sLaunchRad = (initialHeadingDeg * Math.PI) / 180;
+          if (isGroundLaunched) {
+            const sClimbRad = (80 * Math.PI) / 180;
+            const sHFrac = Math.cos(sClimbRad);
+            sVhx = Math.sin(sLaunchRad) * sHFrac;
+            sVhy = Math.cos(sLaunchRad) * sHFrac;
+            sVhz = Math.sin(sClimbRad);
+          } else {
+            sVhx = Math.sin(sLaunchRad);
+            sVhy = Math.cos(sLaunchRad);
+            sVhz = 0;
+          }
+        } else {
+          sVhx = slot.state.vx / sSafe;
+          sVhy = slot.state.vy / sSafe;
+          sVhz = slot.state.vz / sSafe;
+        }
+        const sTAx = sThrustForce * sInvMass * sVhx;
+        const sTAy = sThrustForce * sInvMass * sVhy;
+        const sTAz = sThrustForce * sInvMass * sVhz;
         const sDAx = -(sFDrag * sInvMass) * (slot.state.vx / sSafe);
         const sDAy = -(sFDrag * sInvMass) * (slot.state.vy / sSafe);
         const sDAz = -(sFDrag * sInvMass) * (slot.state.vz / sSafe);
