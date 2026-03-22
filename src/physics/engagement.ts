@@ -281,9 +281,10 @@ export function runSimulation(cfg: ScenarioConfig): {
   const isGroundLaunched = cfg.shooterRole === 'ground';
 
   // ── IR pre-launch seeker validation ────────────────────────────────────────
-  // IR missiles require a valid seeker lock before launch. If the target is
-  // beyond the seeker acquisition range, the missile cannot be fired.
-  if (m.type === 'IR') {
+  // Short-range IR missiles need a seeker lock before launch.
+  // IR+datalink missiles (R-27ET, MICA-IR) fly on INS+datalink mid-course like ARH;
+  // the IR seeker only needs to acquire in the terminal phase, so no pre-launch range check.
+  if (m.type === 'IR' && !m.hasDatalink) {
     const seekerMaxRange = (m.seekerAcquisitionRange_nm ?? 10) * NM_TO_M;
     if (rangeM > seekerMaxRange) {
       return {
@@ -663,8 +664,9 @@ export function runSimulation(cfg: ScenarioConfig): {
       shooterState,
     );
 
-    // Track last known target position when seeker is active
-    if (missileState.active && !seduced) {
+    // Track last known target position: updated by datalink OR active seeker.
+    // When both are inactive the missile is on IOG dead-reckoning — freeze position.
+    if ((datalinkActive || missileState.active) && !seduced) {
       lastKnownTargetX = newTarget.x;
       lastKnownTargetY = newTarget.y;
     }
@@ -776,9 +778,11 @@ export function runSimulation(cfg: ScenarioConfig): {
       cmEventThisFrame = { type: 'reacquired', probability: 1.0, cm: m.type === 'IR' ? 'flare' : 'chaff' };
     }
 
-    // Seduced missile homes on last known position (or flies blind)
-    const guidanceTargetX = seduced ? lastKnownTargetX : newTarget.x;
-    const guidanceTargetY = seduced ? lastKnownTargetY : newTarget.y;
+    // IOG dead-reckoning: use last known position when seduced, or when both
+    // datalink and seeker are inactive (mid-course after datalink loss, pre-pitbull).
+    const useDeadReckoning = seduced || (!datalinkActive && !missileState.active);
+    const guidanceTargetX = useDeadReckoning ? lastKnownTargetX : newTarget.x;
+    const guidanceTargetY = useDeadReckoning ? lastKnownTargetY : newTarget.y;
 
     // ── Thrust and mass: multi-phase if available, else linear burnout model ─
     const burning = time < burnTime;
@@ -823,9 +827,9 @@ export function runSimulation(cfg: ScenarioConfig): {
       mx: missileState.x, my: missileState.y, mz: mzM,
       mvx: missileState.vx, mvy: missileState.vy, mvz: missileState.vz,
       tx: guidanceTargetX, ty: guidanceTargetY, tz: tzGuide,
-      tvx: seduced ? 0 : newTarget.vx,
-      tvy: seduced ? 0 : newTarget.vy,
-      tvz: seduced ? 0 : (newTarget.vzMs ?? 0),
+      tvx: useDeadReckoning ? 0 : newTarget.vx,
+      tvy: useDeadReckoning ? 0 : newTarget.vy,
+      tvz: useDeadReckoning ? 0 : (newTarget.vzMs ?? 0),
       navConst: currentNavN,
     });
 
