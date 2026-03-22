@@ -588,7 +588,7 @@
     },
     "performance": {
       "maxSpeed_mach": 4.0,
-      "maxRange_nm": 97.19,
+      "maxRange_nm": 65.0,
       "maxRange_head_on_nm": 64.79,
       "maxRange_tail_nm": 24.84,
       "gLimit": 18.0,
@@ -607,7 +607,7 @@
     "seekerAcquisitionRange_nm": 10.0,
     "loftAngle_deg": 9.8,
     "maxSpeed_mach": 4.0,
-    "maxRange_nm": 97.19,
+    "maxRange_nm": 65.0,
     "killDistance_m": 15,
     "lifeTime_s": 200
   },
@@ -727,7 +727,7 @@
     },
     "performance": {
       "maxSpeed_mach": 4.0,
-      "maxRange_nm": 97.19,
+      "maxRange_nm": 65.0,
       "maxRange_head_on_nm": 64.79,
       "maxRange_tail_nm": 24.84,
       "gLimit": 18.0,
@@ -746,7 +746,7 @@
     "seekerAcquisitionRange_nm": 10.0,
     "loftAngle_deg": 9.8,
     "maxSpeed_mach": 4.0,
-    "maxRange_nm": 97.19,
+    "maxRange_nm": 65.0,
     "killDistance_m": 15,
     "lifeTime_s": 200
   },
@@ -989,7 +989,7 @@
     },
     "performance": {
       "maxSpeed_mach": 4.0,
-      "maxRange_nm": 97.19,
+      "maxRange_nm": 65.0,
       "maxRange_head_on_nm": 64.79,
       "maxRange_tail_nm": 24.84,
       "gLimit": 18.0,
@@ -1008,7 +1008,7 @@
     "seekerAcquisitionRange_nm": 10.0,
     "loftAngle_deg": 9.8,
     "maxSpeed_mach": 4.0,
-    "maxRange_nm": 97.19,
+    "maxRange_nm": 65.0,
     "killDistance_m": 15,
     "lifeTime_s": 200
   },
@@ -1128,7 +1128,7 @@
     },
     "performance": {
       "maxSpeed_mach": 4.0,
-      "maxRange_nm": 97.19,
+      "maxRange_nm": 65.0,
       "maxRange_head_on_nm": 64.79,
       "maxRange_tail_nm": 24.84,
       "gLimit": 18.0,
@@ -1147,7 +1147,7 @@
     "seekerAcquisitionRange_nm": 10.0,
     "loftAngle_deg": 9.8,
     "maxSpeed_mach": 4.0,
-    "maxRange_nm": 97.19,
+    "maxRange_nm": 65.0,
     "killDistance_m": 15,
     "lifeTime_s": 200
   },
