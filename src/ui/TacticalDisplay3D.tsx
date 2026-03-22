@@ -315,6 +315,8 @@ function FlyCamera({ initialPos, lookAt, version }: {
   }, [camera, gl]);
 
   useFrame((_, delta) => {
+    // Skip input processing when canvas is hidden (display:none on ancestor) — saves CPU on mobile
+    if (!gl.domElement.offsetParent) return;
     const scale = getSpeedScale(camera, sceneCenterRef.current);
     const speed = MOVE_SPEED * scale * (keys.current['ShiftLeft'] || keys.current['ShiftRight'] ? 8 : 1);
     const fwd   = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
