@@ -823,7 +823,7 @@ export function runSimulation(cfg: ScenarioConfig): {
     const effectiveDescentM = loftDescentM ?? maxRangeM * 0.25;
 
     // Must be computed before computeLoftAltitude (it's also used by the PN block below).
-    const isLoftClimb = !isGroundLaunched && loftAngle > 0 && burning && horizDistE > effectiveDescentM;
+    const isLoftClimb = !isGroundLaunched && loftAngle > 0 && burning && horizDistE > effectiveTriggerM;
 
     const tzGuide = computeLoftAltitude(
       mzM, tzActual, horizDistE,
@@ -861,10 +861,15 @@ export function runSimulation(cfg: ScenarioConfig): {
       ax = 0; ay = 0; az = 0; limited = false;
     } else if (isLoftClimb) {
       // Direct autopilot pitch command during loft boost phase.
-      // loftAngle_deg is the commanded pitch angle the autopilot holds (from DCS ModelData).
-      // Ramp up over 3s to avoid a discontinuity at launch.
+      // Scale loft angle proportional to range ratio: 0% at trigger range → 100% at max range.
+      // Short shots use little or no loft; only near-max-range shots get full loft angle.
+      const missileMaxRangeM = (m.maxRange_nm ?? 50) * NM_TO_M;
+      const rangeRatio = Math.min(1.0, Math.max(0,
+        (horizDistE - effectiveTriggerM) / Math.max(1, missileMaxRangeM - effectiveTriggerM),
+      ));
+      const effectiveLoftAngle = loftAngle * rangeRatio;
       const bearingRad = Math.atan2(guidanceTargetX - missileState.x, guidanceTargetY - missileState.y);
-      const loftRad = (loftAngle * Math.PI) / 180;
+      const loftRad = (effectiveLoftAngle * Math.PI) / 180;
       const rampFrac = Math.min(1.0, time / 3.0);
       const cmdPitch = rampFrac * loftRad;
       const desVx = Math.sin(bearingRad) * Math.cos(cmdPitch);
@@ -1218,7 +1223,7 @@ export function runSimulation(cfg: ScenarioConfig): {
         const sHorizDist = Math.hypot(sGuidX - slot.state.x, sGuidY - slot.state.y);
 
         // Must be computed before computeLoftAltitude (also used by guidance block below).
-        const sIsLoftClimb = !isGroundLaunched && sLoftAngle > 0 && sBurning && sHorizDist > sEffectiveDescentM;
+        const sIsLoftClimb = !isGroundLaunched && sLoftAngle > 0 && sBurning && sHorizDist > sEffectiveTriggerM;
 
         const sTzGuide = computeLoftAltitude(
           sMz, sTz, sHorizDist,
@@ -1241,8 +1246,13 @@ export function runSimulation(cfg: ScenarioConfig): {
         if (sFlight < sControlDelay) {
           sAx = 0; sAy = 0; sAz = 0;
         } else if (sIsLoftClimb) {
+          const sMissileMaxRangeM = (sm.maxRange_nm ?? 50) * NM_TO_M;
+          const sRangeRatio = Math.min(1.0, Math.max(0,
+            (sHorizDist - sEffectiveTriggerM) / Math.max(1, sMissileMaxRangeM - sEffectiveTriggerM),
+          ));
+          const sEffectiveLoftAngle = sLoftAngle * sRangeRatio;
           const sBearingRad = Math.atan2(sGuidX - slot.state.x, sGuidY - slot.state.y);
-          const sLoftRad = (sLoftAngle * Math.PI) / 180;
+          const sLoftRad = (sEffectiveLoftAngle * Math.PI) / 180;
           const sRampFrac = Math.min(1.0, sFlight / 3.0);
           const sCmdPitch = sRampFrac * sLoftRad;
           const sDesVx = Math.sin(sBearingRad) * Math.cos(sCmdPitch);
