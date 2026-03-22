@@ -809,20 +809,12 @@ export function runSimulation(cfg: ScenarioConfig): {
       seduced, isGroundLaunched, burning, burnTime > 0 ? time / burnTime : 1,
     );
 
-    // ── Proportional nav — 3D; PN gain on actual 3D range to real target ─────
+    // ── Proportional nav — computed always for range/closingVelocity display ─
     const range3DActual = Math.sqrt(
       (newTarget.x - missileState.x) ** 2 +
       (newTarget.y - missileState.y) ** 2 +
       (tzActual - mzM) ** 2,
     );
-    // During the loft phase (range > triggerRange), the missile uses INS mid-course
-    // guidance to pitch toward the planned trajectory — not range-decayed PN.
-    // Use navN (default N) during loft so the missile actually reaches loft altitude;
-    // switch to the range-dependent schedule only in the terminal/descent phase.
-    const isLoftPhase = !isGroundLaunched && loftAngle > 0 && horizDistE > effectiveTriggerM;
-    const currentNavN = isLoftPhase
-      ? navN
-      : getPNGain(range3DActual, pnSchedule, navN);
     const guidOut = proportionalNav({
       mx: missileState.x, my: missileState.y, mz: mzM,
       mvx: missileState.vx, mvy: missileState.vy, mvz: missileState.vz,
@@ -830,12 +822,17 @@ export function runSimulation(cfg: ScenarioConfig): {
       tvx: useDeadReckoning ? 0 : newTarget.vx,
       tvy: useDeadReckoning ? 0 : newTarget.vy,
       tvz: useDeadReckoning ? 0 : (newTarget.vzMs ?? 0),
-      navConst: currentNavN,
+      navConst: getPNGain(range3DActual, pnSchedule, navN),
     });
 
     const { range, closingVelocity } = seduced
       ? { range: Math.sqrt(dxSk * dxSk + dySk * dySk), closingVelocity: 0 }
       : guidOut;
+
+    // Loft climb: motor burning, loft profile exists, haven't reached descent zone.
+    // Use direct autopilot pitch command — PN can't generate steep pitch-up from a
+    // horizontal velocity vector; direct command gets the missile into thin air fast.
+    const isLoftClimb = !isGroundLaunched && loftAngle > 0 && burning && horizDistE > effectiveDescentM;
 
     let ax: number, ay: number, az: number, limited: boolean;
     if (time < controlDelay) {
@@ -844,7 +841,28 @@ export function runSimulation(cfg: ScenarioConfig): {
     } else if (sarhDatalinkLost) {
       // Pure SARH without IOG: illuminator lost → no PN commands.
       ax = 0; ay = 0; az = 0; limited = false;
+    } else if (isLoftClimb) {
+      // Direct autopilot pitch command during loft boost phase.
+      // loftAngle_deg is the commanded pitch angle the autopilot holds (from DCS ModelData).
+      // Ramp up over 3s to avoid a discontinuity at launch.
+      const bearingRad = Math.atan2(guidanceTargetX - missileState.x, guidanceTargetY - missileState.y);
+      const loftRad = (loftAngle * Math.PI) / 180;
+      const rampFrac = Math.min(1.0, time / 3.0);
+      const cmdPitch = rampFrac * loftRad;
+      const desVx = Math.sin(bearingRad) * Math.cos(cmdPitch);
+      const desVy = Math.cos(bearingRad) * Math.cos(cmdPitch);
+      const desVz = Math.sin(cmdPitch);
+      const spd = Math.max(missileState.speedMs, 1);
+      const curVx = missileState.vx / spd;
+      const curVy = missileState.vy / spd;
+      const curVz = missileState.vz / spd;
+      const gain = 4.0;
+      ax = (desVx - curVx) * spd * gain;
+      ay = (desVy - curVy) * spd * gain;
+      az = (desVz - curVz) * spd * gain;
+      ({ ax, ay, az, limited } = clampAcceleration(ax, ay, az, gLimit, spd));
     } else {
+      // Standard PN: terminal phase, coast phase, or non-lofting missiles.
       ({ ax, ay, az, limited } = clampAcceleration(guidOut.ax, guidOut.ay, guidOut.az, gLimit, missileState.speedMs));
       if (limited && !seduced) {
         missReason = 'insufficient maneuverability';
@@ -1192,14 +1210,31 @@ export function runSimulation(cfg: ScenarioConfig): {
           tvx: slot.seduced ? 0 : newTarget.vx,
           tvy: slot.seduced ? 0 : newTarget.vy,
           tvz: slot.seduced ? 0 : (newTarget.vzMs ?? 0),
-          navConst: (!isGroundLaunched && sLoftAngle > 0 && sHorizDist > sEffectiveTriggerM)
-            ? sNavN
-            : getPNGain(sRange, sPnSchedule, sNavN),
+          navConst: getPNGain(sRange, sPnSchedule, sNavN),
         });
+
+        const sIsLoftClimb = !isGroundLaunched && sLoftAngle > 0 && sBurning && sHorizDist > sEffectiveDescentM;
 
         let sAx: number, sAy: number, sAz: number;
         if (sFlight < sControlDelay) {
-          sAx = 0; sAy = 0; sAz = 0; // no PN during fins-locked phase
+          sAx = 0; sAy = 0; sAz = 0;
+        } else if (sIsLoftClimb) {
+          const sBearingRad = Math.atan2(sGuidX - slot.state.x, sGuidY - slot.state.y);
+          const sLoftRad = (sLoftAngle * Math.PI) / 180;
+          const sRampFrac = Math.min(1.0, sFlight / 3.0);
+          const sCmdPitch = sRampFrac * sLoftRad;
+          const sDesVx = Math.sin(sBearingRad) * Math.cos(sCmdPitch);
+          const sDesVy = Math.cos(sBearingRad) * Math.cos(sCmdPitch);
+          const sDesVz = Math.sin(sCmdPitch);
+          const sSpd = Math.max(slot.state.speedMs, 1);
+          const sCurVx = slot.state.vx / sSpd;
+          const sCurVy = slot.state.vy / sSpd;
+          const sCurVz = slot.state.vz / sSpd;
+          const sGain = 4.0;
+          sAx = (sDesVx - sCurVx) * sSpd * sGain;
+          sAy = (sDesVy - sCurVy) * sSpd * sGain;
+          sAz = (sDesVz - sCurVz) * sSpd * sGain;
+          ({ ax: sAx, ay: sAy, az: sAz } = clampAcceleration(sAx, sAy, sAz, sGLimit, sSpd));
         } else {
           ({ ax: sAx, ay: sAy, az: sAz } = clampAcceleration(sGuidOut.ax, sGuidOut.ay, sGuidOut.az, sGLimit, slot.state.speedMs));
         }
