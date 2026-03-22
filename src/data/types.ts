@@ -81,6 +81,9 @@ export interface MissileData {
    *  SAMs: 10–60m; large ARH/SARH: 12–20m; IR/dogfight: 5–8m; MANPADs: 1–3m. */
   killDistance_m?: number;
 
+  /** True if this is a surface-to-air missile (SAM / MANPAD) — shown in ground-mode dropdown only */
+  isSAM?: boolean;
+
   /** True if this is a synthetic test round, not a real weapon */
   isSynthetic?: boolean;
 
