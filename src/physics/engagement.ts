@@ -1000,7 +1000,7 @@ export function runSimulation(cfg: ScenarioConfig): {
       targetState.x, targetState.y, targetState.altFt * FT_TO_M,     // target start (pre-step)
       newTarget.x, newTarget.y, newTarget.altFt * FT_TO_M,            // target end (post-step)
     );
-    if (!seduced && cpa < KILL_RADIUS_M) {
+    if (cpa < KILL_RADIUS_M) {
       hitDetected = true;
       const fdxH = shooterState.x - newTarget.x;
       const fdyH = shooterState.y - newTarget.y;
@@ -1297,7 +1297,7 @@ export function runSimulation(cfg: ScenarioConfig): {
           targetState.x, targetState.y, targetState.altFt * FT_TO_M, // target start
           newTarget.x, newTarget.y, newTarget.altFt * FT_TO_M,       // target end
         );
-        if (!slot.seduced && sCpa < KILL_RADIUS_M) {
+        if (sCpa < KILL_RADIUS_M) {
           slot.done = true;
         }
         if ((sNewSpeed < 50 && slot.tFlight > 3.0) || (sNewAlt <= 0 && sNewVz < 0)) {
