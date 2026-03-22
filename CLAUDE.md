@@ -71,7 +71,7 @@ datamine/                      ← Cloned Quaggles/dcs-lua-datamine (gitignored)
 
 ```
 DCS World ──► Quaggles datamine ──► tools/dcs_data_extractor.py ──► src/data/missiles.json
-                (Lua files)            (Python, slpp parser)           (96 missiles)
+                (Lua files)            (Python, slpp parser)           (97 missiles)
                                               │
                                               ▼
                                     src/physics/ consumes:
@@ -275,7 +275,7 @@ Old-API missiles (no ModelData) use these derivation rules:
 
 | File | Purpose |
 |------|---------|
-| `src/data/missiles.json` | 96 A2A/SAM missiles extracted from DCS datamine |
+| `src/data/missiles.json` | 97 A2A/SAM missiles (96 DCS + AIM-174B from Currenthill mod) |
 | `src/data/types.ts` | TypeScript interfaces — `MissileData`, `CxCoeffs`, `ThrustPhase`, `PNEntry`, `DLZ` |
 | `src/physics/engagement.ts` | Main simulation loop, segment-vs-segment CPA (12m kill radius) |
 | `src/physics/missile.ts` | `getCxDCS()`, `getThrustAndMass()`, `dragForce()`, `fillMissingFields()` |
@@ -526,7 +526,20 @@ function computeRWR(
 - Persistence opacity: `opacity = 0.4 + t.intensity * 0.6` (fading contacts dim smoothly)
 - Mute toggle button below status bar
 
-### 13. Comparison Table (ComparisonPanel.tsx, simStore.ComparisonEntry)
+### 13. Battery Life (`lifeTime_s`)
+
+Each missile has a `lifeTime_s` field (from DCS `Life_Time`) representing the battery/power system duration. When `time >= lifeTime_s` and the missile has not yet hit:
+- Guidance commands go to zero (electronics dead)
+- `missReason = 'battery expired'`
+- `buildVerdict()` returns `'Miss — battery expired'`
+
+**Key values**: AIM-120B 85 s, AIM-120C 90 s, AIM-54 200 s, AIM-9 family 60 s, AIM-7 family 80 s, R-77 90 s, AIM-174B 720 s, SM-6 200 s, MANPADs 30 s. Default for unknowns: 120 s.
+
+The old hardcoded `maxTime = 300` is replaced by `m.lifeTime_s ?? 120`. The 'timeout' missReason is legacy and no longer produced.
+
+---
+
+### 14. Comparison Table (ComparisonPanel.tsx, simStore.ComparisonEntry)
 
 - `ComparisonEntry`: records missile, maneuver, range, aspect, Pk, hit, TOF, terminal Mach, miss dist, F/A-pole, verdict
 - "Add Current" button in COMPARE tab adds active `simResult` to the table
@@ -664,7 +677,11 @@ const midZ = -rangeM * cos(aspectRad) * 0.5;
 
 5. **DataMine patch tracking**: DCS patches change ModelData values (thrust, Cx, DLZ). Run `--update --diff` after each DCS patch to catch changes.
 
-6. ~~**True 3D ProNav**~~: Resolved — guidance upgraded to full 3D PN with LOS angular velocity vector `Ω = (R×V_rel)/|R|²` producing `(ax, ay, az)` guidance commands. Loft and SAM steep-launch handled via virtual target altitude offsets.
+6. ~~**True 3D ProNav**~~: Resolved
+
+7. ~~**Missing Life_Time enforcement**~~: Resolved — `m.lifeTime_s` replaces the old hardcoded `maxTime = 300`. Extractor now outputs `lifeTime_s` for all new-API missiles.
+
+8. **AIM-174B (Currenthill mod)**: Physics sourced from the third-party Currenthill mod (`dataSource: 'currenthill_mod'`), not from the official DCS datamine. Values may change if the mod updates. The SM-6 remains in the database as a ship-launched SAM (ground mode only). — guidance upgraded to full 3D PN with LOS angular velocity vector `Ω = (R×V_rel)/|R|²` producing `(ax, ay, az)` guidance commands. Loft and SAM steep-launch handled via virtual target altitude offsets.
 
 ---
 
@@ -684,6 +701,18 @@ const midZ = -rangeM * cos(aspectRad) * 0.5;
 | hit=false | Miss — [reason] |
 
 **Important**: a geometric hit (CPA < 8m) always produces a "Kill" family verdict, never "Miss". The Pk=0.30 low-speed hit case is labeled "Kill — low terminal energy" (warhead detonated in lethal radius, just low-energy).
+
+**Miss reasons** (from `buildVerdict()`):
+| missReason | Verdict |
+|------------|---------|
+| `battery expired` | Miss — battery expired (new: `m.lifeTime_s` elapsed) |
+| `insufficient energy` | Miss — insufficient energy |
+| `insufficient maneuverability` | Miss — defeated by maneuver |
+| `defeated by flares` | Decoyed — seduced by flares |
+| `defeated by chaff` | Decoyed — seduced by chaff |
+| `seeker cannot acquire` | No launch — beyond seeker range |
+| `ground strike` | Miss — ground strike |
+| `timeout` | Miss — engagement timeout (legacy, no longer produced) |
 
 ### Atmosphere consistency
 
