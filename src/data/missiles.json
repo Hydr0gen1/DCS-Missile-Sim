@@ -124,7 +124,8 @@
     "maxSpeed_mach": 1.4,
     "maxRange_nm": 4.32,
     "dataSource": "old_api_estimated",
-    "killDistance_m": 12
+    "killDistance_m": 12,
+    "lifeTime_s": 120
   },
   {
     "id": "aim-120",
@@ -261,7 +262,8 @@
     "loftAngle_deg": 31.6,
     "maxSpeed_mach": 4.0,
     "maxRange_nm": 30.78,
-    "killDistance_m": 15
+    "killDistance_m": 15,
+    "lifeTime_s": 85
   },
   {
     "id": "aim-120c",
@@ -392,7 +394,83 @@
     "loftAngle_deg": 31.6,
     "maxSpeed_mach": 4.0,
     "maxRange_nm": 32.94,
-    "killDistance_m": 15
+    "killDistance_m": 15,
+    "lifeTime_s": 90
+  },
+  {
+    "id": "aim-174b",
+    "name": "AIM-174B",
+    "dcsName": "AIM_174B",
+    "type": "ARH",
+    "hasIOG": true,
+    "hasDatalink": true,
+    "mass_kg": 850.0,
+    "diameter_mm": 340,
+    "referenceArea_m2": 0.3,
+    "maxSpeed_mach": 4.2,
+    "gLimit": 30,
+    "guidanceNav": 6.0,
+    "maxRange_nm": 216.0,
+    "seekerAcquisitionRange_nm": 16.2,
+    "killDistance_m": 25,
+    "lifeTime_s": 720,
+    "ccm_k0": 0.05,
+    "loftAngle_deg": 31.6,
+    "motorBurnTime_s": 30.0,
+    "thrust_N": 16325.0,
+    "massBurnout_kg": 699.46,
+    "dragCoefficient": 0.029,
+    "propulsion": {
+      "phases": [
+        {
+          "name": "accel",
+          "duration_s": 8.0,
+          "thrust_N": 16325.0,
+          "fuelFlow_kg_s": 7.41
+        },
+        {
+          "name": "march",
+          "duration_s": 22.0,
+          "thrust_N": 11150.0,
+          "fuelFlow_kg_s": 4.15
+        }
+      ],
+      "totalBurnTime_s": 30.0,
+      "totalFuelMass_kg": 150.54,
+      "massAtBurnout_kg": 699.46
+    },
+    "aerodynamics": {
+      "Cx": {
+        "k0": 0.029,
+        "k1": 0.06,
+        "k2": 0.01,
+        "k3": -0.245,
+        "k4": 0.08
+      }
+    },
+    "guidance": {
+      "controlDelay_s": 1.0,
+      "pn_schedule": [
+        {
+          "range_m": 0,
+          "N": 6.0
+        }
+      ]
+    },
+    "loft": {
+      "triggerRange_m": 25000.0,
+      "descentRange_m": 15000.0,
+      "elevationSin": 0.52356,
+      "elevationDeg": 31.6
+    },
+    "seekerSpec": {
+      "type": "ARH",
+      "acquisitionRange_m": 30000.0,
+      "gimbalLimit_rad": 1.05
+    },
+    "rwrSymbol": "M",
+    "isSAM": false,
+    "dataSource": "currenthill_mod"
   },
   {
     "id": "aim-54a-mk47",
@@ -530,7 +608,8 @@
     "loftAngle_deg": 9.8,
     "maxSpeed_mach": 4.0,
     "maxRange_nm": 97.19,
-    "killDistance_m": 15
+    "killDistance_m": 15,
+    "lifeTime_s": 200
   },
   {
     "id": "aim-54a-mk60",
@@ -668,7 +747,8 @@
     "loftAngle_deg": 9.8,
     "maxSpeed_mach": 4.0,
     "maxRange_nm": 97.19,
-    "killDistance_m": 15
+    "killDistance_m": 15,
+    "lifeTime_s": 200
   },
   {
     "id": "aim-54",
@@ -790,7 +870,8 @@
     "loftAngle_deg": 30.0,
     "maxSpeed_mach": 4.5,
     "maxRange_nm": 75.59,
-    "killDistance_m": 15
+    "killDistance_m": 15,
+    "lifeTime_s": 200
   },
   {
     "id": "aim-54c-mk47",
@@ -928,7 +1009,8 @@
     "loftAngle_deg": 9.8,
     "maxSpeed_mach": 4.0,
     "maxRange_nm": 97.19,
-    "killDistance_m": 15
+    "killDistance_m": 15,
+    "lifeTime_s": 200
   },
   {
     "id": "aim-54c-mk60",
@@ -1066,7 +1148,8 @@
     "loftAngle_deg": 9.8,
     "maxSpeed_mach": 4.0,
     "maxRange_nm": 97.19,
-    "killDistance_m": 15
+    "killDistance_m": 15,
+    "lifeTime_s": 200
   },
   {
     "id": "asm-n-2",
@@ -1193,7 +1276,8 @@
     "maxSpeed_mach": 0.45,
     "maxRange_nm": 10.8,
     "dataSource": "old_api_estimated",
-    "killDistance_m": 12
+    "killDistance_m": 12,
+    "lifeTime_s": 120
   },
   {
     "id": "hj-12",
@@ -1317,7 +1401,8 @@
     "maxSpeed_mach": 0.95,
     "maxRange_nm": 4.59,
     "dataSource": "old_api_estimated",
-    "killDistance_m": 12
+    "killDistance_m": 12,
+    "lifeTime_s": 120
   },
   {
     "id": "mica-r",
@@ -1439,7 +1524,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 4.0,
     "maxRange_nm": 24.3,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "pl-12",
@@ -1592,7 +1678,8 @@
     "loftAngle_deg": 15.1,
     "maxSpeed_mach": 5.0,
     "maxRange_nm": 37.8,
-    "killDistance_m": 15
+    "killDistance_m": 15,
+    "lifeTime_s": 90
   },
   {
     "id": "p-77",
@@ -1714,7 +1801,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 4.0,
     "maxRange_nm": 27.0,
-    "killDistance_m": 15
+    "killDistance_m": 15,
+    "lifeTime_s": 90
   },
   {
     "id": "sd-10",
@@ -1867,7 +1955,8 @@
     "loftAngle_deg": 15.1,
     "maxSpeed_mach": 5.0,
     "maxRange_nm": 37.8,
-    "killDistance_m": 15
+    "killDistance_m": 15,
+    "lifeTime_s": 90
   },
   {
     "id": "sa9m31",
@@ -1992,7 +2081,8 @@
     "maxRange_nm": 2.27,
     "dataSource": "old_api_estimated",
     "killDistance_m": 5,
-    "isSAM": true
+    "isSAM": true,
+    "lifeTime_s": 80
   },
   {
     "id": "sa9m333",
@@ -2117,7 +2207,8 @@
     "maxRange_nm": 2.7,
     "dataSource": "old_api_estimated",
     "killDistance_m": 5,
-    "isSAM": true
+    "isSAM": true,
+    "lifeTime_s": 80
   },
   {
     "id": "igla-1e",
@@ -2257,7 +2348,8 @@
     "maxRange_nm": 2.43,
     "dataSource": "old_api_estimated",
     "killDistance_m": 1,
-    "isSAM": true
+    "isSAM": true,
+    "lifeTime_s": 30
   },
   {
     "id": "gar-8",
@@ -2379,7 +2471,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.2,
     "maxRange_nm": 5.94,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "aim-9e",
@@ -2496,7 +2589,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.5,
     "maxRange_nm": 7.56,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "aim-9j",
@@ -2613,7 +2707,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.5,
     "maxRange_nm": 7.56,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "aim-9juli",
@@ -2730,7 +2825,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.5,
     "maxRange_nm": 7.56,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "aim-9l",
@@ -2847,7 +2943,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.7,
     "maxRange_nm": 7.56,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "aim-9",
@@ -2964,7 +3061,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.7,
     "maxRange_nm": 7.56,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "aim-9p",
@@ -3081,7 +3179,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.2,
     "maxRange_nm": 5.94,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "aim-9p3",
@@ -3198,7 +3297,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.2,
     "maxRange_nm": 5.94,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "aim-9p5",
@@ -3315,7 +3415,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.2,
     "maxRange_nm": 5.94,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "aim-9x",
@@ -3437,7 +3538,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.7,
     "maxRange_nm": 7.56,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "catm-9m",
@@ -3555,7 +3657,8 @@
     "maxSpeed_mach": 2.7,
     "maxRange_nm": 7.56,
     "dataSource": "old_api_estimated",
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "oh58d-fim-92",
@@ -3695,7 +3798,8 @@
     "maxRange_nm": 3.24,
     "dataSource": "old_api_estimated",
     "killDistance_m": 3,
-    "isSAM": true
+    "isSAM": true,
+    "lifeTime_s": 30
   },
   {
     "id": "fim-92c",
@@ -3835,7 +3939,8 @@
     "maxRange_nm": 3.24,
     "dataSource": "old_api_estimated",
     "killDistance_m": 3,
-    "isSAM": true
+    "isSAM": true,
+    "lifeTime_s": 30
   },
   {
     "id": "mica-t",
@@ -3959,7 +4064,8 @@
     "maxRange_nm": 21.6,
     "hasDatalink": true,
     "hasIOG": true,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "mim-72g",
@@ -4077,7 +4183,8 @@
     "maxSpeed_mach": 2.5,
     "maxRange_nm": 4.59,
     "killDistance_m": 8,
-    "isSAM": true
+    "isSAM": true,
+    "lifeTime_s": 30
   },
   {
     "id": "mmagicii",
@@ -4194,7 +4301,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.0,
     "maxRange_nm": 5.4,
-    "killDistance_m": 6
+    "killDistance_m": 6,
+    "lifeTime_s": 60
   },
   {
     "id": "mistral",
@@ -4328,7 +4436,8 @@
     "maxRange_nm": 3.24,
     "dataSource": "old_api_estimated",
     "killDistance_m": 6,
-    "isSAM": true
+    "isSAM": true,
+    "lifeTime_s": 30
   },
   {
     "id": "pl-5eii",
@@ -4445,7 +4554,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.7,
     "maxRange_nm": 8.64,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "pl-8a",
@@ -4562,7 +4672,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.5,
     "maxRange_nm": 10.8,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "pl-8b",
@@ -4679,7 +4790,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.5,
     "maxRange_nm": 10.8,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "r-13m",
@@ -4801,7 +4913,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 4.0,
     "maxRange_nm": 8.1,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "r-13m1",
@@ -4923,7 +5036,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 4.0,
     "maxRange_nm": 8.1,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "p-24t",
@@ -5045,7 +5159,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.0,
     "maxRange_nm": 13.5,
-    "killDistance_m": 12
+    "killDistance_m": 12,
+    "lifeTime_s": 90
   },
   {
     "id": "p-27te",
@@ -5175,7 +5290,8 @@
     "maxRange_nm": 29.16,
     "hasDatalink": true,
     "hasIOG": true,
-    "killDistance_m": 11
+    "killDistance_m": 11,
+    "lifeTime_s": 90
   },
   {
     "id": "p-27t",
@@ -5299,7 +5415,8 @@
     "maxRange_nm": 13.5,
     "hasDatalink": true,
     "hasIOG": true,
-    "killDistance_m": 11
+    "killDistance_m": 11,
+    "lifeTime_s": 90
   },
   {
     "id": "r-3s",
@@ -5421,7 +5538,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.2,
     "maxRange_nm": 5.94,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 30
   },
   {
     "id": "p-40t",
@@ -5545,7 +5663,8 @@
     "maxRange_nm": 21.6,
     "hasDatalink": true,
     "hasIOG": true,
-    "killDistance_m": 15
+    "killDistance_m": 15,
+    "lifeTime_s": 90
   },
   {
     "id": "r-55",
@@ -5675,7 +5794,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.5,
     "maxRange_nm": 5.4,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "r-60",
@@ -5797,7 +5917,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.5,
     "maxRange_nm": 4.32,
-    "killDistance_m": 5
+    "killDistance_m": 5,
+    "lifeTime_s": 40
   },
   {
     "id": "p-60",
@@ -5919,7 +6040,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.5,
     "maxRange_nm": 6.48,
-    "killDistance_m": 5
+    "killDistance_m": 5,
+    "lifeTime_s": 40
   },
   {
     "id": "p-73",
@@ -6041,7 +6163,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.8,
     "maxRange_nm": 6.48,
-    "killDistance_m": 8
+    "killDistance_m": 8,
+    "lifeTime_s": 60
   },
   {
     "id": "r-530f-ir",
@@ -6169,7 +6292,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.0,
     "maxRange_nm": 5.4,
-    "killDistance_m": 20
+    "killDistance_m": 20,
+    "lifeTime_s": 60
   },
   {
     "id": "r-550-m1",
@@ -6286,7 +6410,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.0,
     "maxRange_nm": 5.4,
-    "killDistance_m": 6
+    "killDistance_m": 6,
+    "lifeTime_s": 60
   },
   {
     "id": "r-550",
@@ -6403,7 +6528,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.0,
     "maxRange_nm": 5.4,
-    "killDistance_m": 6
+    "killDistance_m": 6,
+    "lifeTime_s": 60
   },
   {
     "id": "rb-24",
@@ -6525,7 +6651,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.2,
     "maxRange_nm": 5.94,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "rb-24j",
@@ -6642,7 +6769,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.2,
     "maxRange_nm": 5.94,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "rb-74",
@@ -6759,7 +6887,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.7,
     "maxRange_nm": 7.56,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 60
   },
   {
     "id": "sa3m9m",
@@ -6885,7 +7014,8 @@
     "dataSource": "old_api_estimated",
     "killDistance_m": 15,
     "isSAM": true,
-    "rwrSymbol": "6"
+    "rwrSymbol": "6",
+    "lifeTime_s": 120
   },
   {
     "id": "sa48h6e2",
@@ -7009,7 +7139,8 @@
     "maxRange_nm": 80.99,
     "killDistance_m": 25,
     "isSAM": true,
-    "rwrSymbol": "S6"
+    "rwrSymbol": "S6",
+    "lifeTime_s": 120
   },
   {
     "id": "sa5b27",
@@ -7135,7 +7266,8 @@
     "dataSource": "old_api_estimated",
     "killDistance_m": 40,
     "isSAM": true,
-    "rwrSymbol": "3"
+    "rwrSymbol": "3",
+    "lifeTime_s": 200
   },
   {
     "id": "sa5v28",
@@ -7271,7 +7403,8 @@
     "maxRange_nm": 129.59,
     "killDistance_m": 45,
     "isSAM": true,
-    "rwrSymbol": "5"
+    "rwrSymbol": "5",
+    "lifeTime_s": 200
   },
   {
     "id": "sa5b55",
@@ -7395,7 +7528,8 @@
     "maxRange_nm": 40.5,
     "killDistance_m": 25,
     "isSAM": true,
-    "rwrSymbol": "10"
+    "rwrSymbol": "10",
+    "lifeTime_s": 200
   },
   {
     "id": "9m317",
@@ -7534,7 +7668,8 @@
     "isSAM": true,
     "rwrSymbol": "11",
     "hasIOG": true,
-    "hasDatalink": true
+    "hasDatalink": true,
+    "lifeTime_s": 120
   },
   {
     "id": "sa9m33",
@@ -7660,7 +7795,8 @@
     "dataSource": "old_api_estimated",
     "killDistance_m": 10,
     "isSAM": true,
-    "rwrSymbol": "8"
+    "rwrSymbol": "8",
+    "lifeTime_s": 100
   },
   {
     "id": "sa9m330",
@@ -7786,7 +7922,8 @@
     "dataSource": "old_api_estimated",
     "killDistance_m": 12,
     "isSAM": true,
-    "rwrSymbol": "15"
+    "rwrSymbol": "15",
+    "lifeTime_s": 100
   },
   {
     "id": "sa9m338k",
@@ -7911,7 +8048,8 @@
     "maxRange_nm": 8.64,
     "killDistance_m": 12,
     "isSAM": true,
-    "rwrSymbol": "15"
+    "rwrSymbol": "15",
+    "lifeTime_s": 100
   },
   {
     "id": "sa9m38m1",
@@ -8041,7 +8179,8 @@
     "maxRange_nm": 24.84,
     "killDistance_m": 20,
     "isSAM": true,
-    "rwrSymbol": "11"
+    "rwrSymbol": "11",
+    "lifeTime_s": 120
   },
   {
     "id": "aim-7e",
@@ -8167,7 +8306,8 @@
     "loftAngle_deg": null,
     "maxSpeed_mach": 3.2,
     "maxRange_nm": 27.0,
-    "killDistance_m": 12
+    "killDistance_m": 12,
+    "lifeTime_s": 80
   },
   {
     "id": "hb-aim-7e",
@@ -8293,7 +8433,8 @@
     "loftAngle_deg": null,
     "maxSpeed_mach": 3.2,
     "maxRange_nm": 27.0,
-    "killDistance_m": 12
+    "killDistance_m": 12,
+    "lifeTime_s": 80
   },
   {
     "id": "aim-7e-2",
@@ -8419,7 +8560,8 @@
     "loftAngle_deg": null,
     "maxSpeed_mach": 3.2,
     "maxRange_nm": 27.0,
-    "killDistance_m": 12
+    "killDistance_m": 12,
+    "lifeTime_s": 80
   },
   {
     "id": "hb-aim-7e-2",
@@ -8545,7 +8687,8 @@
     "loftAngle_deg": null,
     "maxSpeed_mach": 3.2,
     "maxRange_nm": 27.0,
-    "killDistance_m": 12
+    "killDistance_m": 12,
+    "lifeTime_s": 80
   },
   {
     "id": "aim-7f",
@@ -8677,7 +8820,8 @@
     "loftAngle_deg": null,
     "maxSpeed_mach": 3.2,
     "maxRange_nm": 27.0,
-    "killDistance_m": 12
+    "killDistance_m": 12,
+    "lifeTime_s": 80
   },
   {
     "id": "aim-7",
@@ -8822,7 +8966,8 @@
     "loftAngle_deg": 5.7,
     "maxSpeed_mach": 3.2,
     "maxRange_nm": 27.0,
-    "killDistance_m": 12
+    "killDistance_m": 12,
+    "lifeTime_s": 80
   },
   {
     "id": "aim-7mh",
@@ -8967,7 +9112,8 @@
     "loftAngle_deg": 5.7,
     "maxSpeed_mach": 3.2,
     "maxRange_nm": 27.0,
-    "killDistance_m": 12
+    "killDistance_m": 12,
+    "lifeTime_s": 80
   },
   {
     "id": "aim-7p",
@@ -9112,7 +9258,8 @@
     "loftAngle_deg": 5.7,
     "maxSpeed_mach": 3.2,
     "maxRange_nm": 27.0,
-    "killDistance_m": 12
+    "killDistance_m": 12,
+    "lifeTime_s": 80
   },
   {
     "id": "sea-dart",
@@ -9241,7 +9388,8 @@
     "dataSource": "old_api_estimated",
     "killDistance_m": 15,
     "isSAM": true,
-    "rwrSymbol": "SD"
+    "rwrSymbol": "SD",
+    "lifeTime_s": 120
   },
   {
     "id": "hhq-9",
@@ -9381,7 +9529,8 @@
     "maxRange_nm": 80.99,
     "killDistance_m": 25,
     "isSAM": true,
-    "rwrSymbol": "H9"
+    "rwrSymbol": "H9",
+    "lifeTime_s": 150
   },
   {
     "id": "hq-16",
@@ -9523,7 +9672,8 @@
     "maxRange_nm": 24.3,
     "killDistance_m": 15,
     "isSAM": true,
-    "rwrSymbol": "16"
+    "rwrSymbol": "16",
+    "lifeTime_s": 120
   },
   {
     "id": "sa-iris-t-sl",
@@ -9652,7 +9802,8 @@
     "maxSpeed_mach": 3.0,
     "maxRange_nm": 21.6,
     "killDistance_m": 8,
-    "isSAM": true
+    "isSAM": true,
+    "lifeTime_s": 60
   },
   {
     "id": "mim-104",
@@ -9776,7 +9927,8 @@
     "maxRange_nm": 64.79,
     "killDistance_m": 20,
     "isSAM": true,
-    "rwrSymbol": "P"
+    "rwrSymbol": "P",
+    "lifeTime_s": 150
   },
   {
     "id": "hawk-raketa",
@@ -9906,7 +10058,8 @@
     "maxRange_nm": 21.6,
     "killDistance_m": 18,
     "isSAM": true,
-    "rwrSymbol": "H"
+    "rwrSymbol": "H",
+    "lifeTime_s": 120
   },
   {
     "id": "p-24r",
@@ -10028,7 +10181,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.0,
     "maxRange_nm": 18.9,
-    "killDistance_m": 12
+    "killDistance_m": 12,
+    "lifeTime_s": 80
   },
   {
     "id": "p-27pe",
@@ -10156,7 +10310,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 4.0,
     "maxRange_nm": 32.4,
-    "killDistance_m": 11
+    "killDistance_m": 11,
+    "lifeTime_s": 80
   },
   {
     "id": "p-27p",
@@ -10278,7 +10433,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 4.5,
     "maxRange_nm": 18.9,
-    "killDistance_m": 11
+    "killDistance_m": 11,
+    "lifeTime_s": 80
   },
   {
     "id": "p-33e",
@@ -10406,7 +10562,8 @@
     "loftAngle_deg": 30.0,
     "maxSpeed_mach": 4.5,
     "maxRange_nm": 64.79,
-    "killDistance_m": 20
+    "killDistance_m": 20,
+    "lifeTime_s": 150
   },
   {
     "id": "r-3r",
@@ -10528,7 +10685,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.5,
     "maxRange_nm": 5.94,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 30
   },
   {
     "id": "p-40r",
@@ -10650,7 +10808,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.8,
     "maxRange_nm": 21.6,
-    "killDistance_m": 15
+    "killDistance_m": 15,
+    "lifeTime_s": 90
   },
   {
     "id": "r-530f-em",
@@ -10778,7 +10937,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.0,
     "maxRange_nm": 5.4,
-    "killDistance_m": 30
+    "killDistance_m": 30,
+    "lifeTime_s": 60
   },
   {
     "id": "seasparrow",
@@ -10903,7 +11063,8 @@
     "maxRange_nm": 14.85,
     "killDistance_m": 12,
     "isSAM": true,
-    "rwrSymbol": "SS"
+    "rwrSymbol": "SS",
+    "lifeTime_s": 80
   },
   {
     "id": "rs2us",
@@ -11033,7 +11194,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 2.5,
     "maxRange_nm": 5.4,
-    "killDistance_m": 7
+    "killDistance_m": 7,
+    "lifeTime_s": 30
   },
   {
     "id": "super-530d",
@@ -11161,7 +11323,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 4.0,
     "maxRange_nm": 21.6,
-    "killDistance_m": 20
+    "killDistance_m": 20,
+    "lifeTime_s": 60
   },
   {
     "id": "super-530f",
@@ -11283,7 +11446,8 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 4.0,
     "maxRange_nm": 21.6,
-    "killDistance_m": 30
+    "killDistance_m": 30,
+    "lifeTime_s": 60
   },
   {
     "id": "sa2v755",
@@ -11409,7 +11573,8 @@
     "dataSource": "old_api_estimated",
     "killDistance_m": 60,
     "isSAM": true,
-    "rwrSymbol": "2"
+    "rwrSymbol": "2",
+    "lifeTime_s": 150
   },
   {
     "id": "sm-1",
@@ -11539,7 +11704,8 @@
     "maxRange_nm": 27.54,
     "killDistance_m": 15,
     "isSAM": true,
-    "rwrSymbol": "SM"
+    "rwrSymbol": "SM",
+    "lifeTime_s": 120
   },
   {
     "id": "sm-2",
@@ -11669,7 +11835,8 @@
     "maxRange_nm": 39.96,
     "killDistance_m": 20,
     "isSAM": true,
-    "rwrSymbol": "SM"
+    "rwrSymbol": "SM",
+    "lifeTime_s": 120
   },
   {
     "id": "sm-2er",
@@ -11805,7 +11972,8 @@
     "maxRange_nm": 97.19,
     "killDistance_m": 20,
     "isSAM": true,
-    "rwrSymbol": "SM"
+    "rwrSymbol": "SM",
+    "lifeTime_s": 150
   },
   {
     "id": "sm-6",
@@ -11941,7 +12109,8 @@
     "maxRange_nm": 97.19,
     "killDistance_m": 20,
     "hasIOG": true,
-    "hasDatalink": true
+    "hasDatalink": true,
+    "lifeTime_s": 200
   },
   {
     "id": "matra-super-530d",
@@ -12086,7 +12255,8 @@
     "loftAngle_deg": 5.7,
     "maxSpeed_mach": 5.0,
     "maxRange_nm": 21.6,
-    "killDistance_m": 20
+    "killDistance_m": 20,
+    "lifeTime_s": 60
   },
   {
     "id": "roland-r",
@@ -12212,6 +12382,7 @@
     "dataSource": "old_api_estimated",
     "killDistance_m": 8,
     "isSAM": true,
-    "rwrSymbol": "R"
+    "rwrSymbol": "R",
+    "lifeTime_s": 120
   }
 ]

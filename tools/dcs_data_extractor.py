@@ -470,6 +470,8 @@ def extract_missile(
         "maxRange_nm": _m_to_nm(max_range_m),
         # DCS KillDistance: proximity fuze lethal radius (m)
         "killDistance_m": kill_dist if kill_dist else None,
+        # DCS Life_Time: battery/power system duration (s) — missile electronics die after this
+        "lifeTime_s": int(_safe(params.get("Life_Time"))) if _safe(params.get("Life_Time")) and _safe(params.get("Life_Time")) < 1e8 else None,
     }
 
     return entry

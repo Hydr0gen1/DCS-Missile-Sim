@@ -87,6 +87,10 @@ export interface MissileData {
   /** True if this is a synthetic test round, not a real weapon */
   isSynthetic?: boolean;
 
+  /** DCS Life_Time: battery/power system duration in seconds. After this time, guidance and
+   *  seeker die — missile becomes ballistic and self-destructs shortly after. */
+  lifeTime_s?: number;
+
   /** RWR symbol shown when this missile's active ARH seeker is detected (e.g. "120", "77", "M") */
   rwrSymbol?: string;
 
