@@ -26,7 +26,7 @@ export default function PlaybackBar({ mobile }: Props) {
     simFrames, currentFrameIdx, simStatus, simResult,
     playbackSpeed, isPlaying,
     setSimFrames, setSimError, setCurrentFrameIdx, setIsPlaying,
-    setPlaybackSpeed, resetSim,
+    setPlaybackSpeed, resetSim, setMobileTab,
   } = store;
 
   const rafRef = useRef<number | null>(null);
@@ -120,6 +120,7 @@ export default function PlaybackBar({ mobile }: Props) {
       setSimFrames(frames, result, maxRangeM, minRangeM, nezM, shooterStartX, shooterStartY);
       setCurrentFrameIdx(0);
       setIsPlaying(true);
+      if (mobile) setMobileTab('view');
       lastTimeRef.current = performance.now();
       accumRef.current = 0;
     } catch (e) {
