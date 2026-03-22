@@ -811,7 +811,14 @@ export function runSimulation(cfg: ScenarioConfig): {
       (newTarget.y - missileState.y) ** 2 +
       (tzActual - mzM) ** 2,
     );
-    const currentNavN = getPNGain(range3DActual, pnSchedule, navN);
+    // During the loft phase (range > triggerRange), the missile uses INS mid-course
+    // guidance to pitch toward the planned trajectory — not range-decayed PN.
+    // Use navN (default N) during loft so the missile actually reaches loft altitude;
+    // switch to the range-dependent schedule only in the terminal/descent phase.
+    const isLoftPhase = !isGroundLaunched && loftAngle > 0 && horizDistE > effectiveTriggerM;
+    const currentNavN = isLoftPhase
+      ? navN
+      : getPNGain(range3DActual, pnSchedule, navN);
     const guidOut = proportionalNav({
       mx: missileState.x, my: missileState.y, mz: mzM,
       mvx: missileState.vx, mvy: missileState.vy, mvz: missileState.vz,
@@ -1181,7 +1188,9 @@ export function runSimulation(cfg: ScenarioConfig): {
           tvx: slot.seduced ? 0 : newTarget.vx,
           tvy: slot.seduced ? 0 : newTarget.vy,
           tvz: slot.seduced ? 0 : (newTarget.vzMs ?? 0),
-          navConst: getPNGain(sRange, sPnSchedule, sNavN),
+          navConst: (!isGroundLaunched && sLoftAngle > 0 && sHorizDist > sEffectiveTriggerM)
+            ? sNavN
+            : getPNGain(sRange, sPnSchedule, sNavN),
         });
 
         let sAx: number, sAy: number, sAz: number;
