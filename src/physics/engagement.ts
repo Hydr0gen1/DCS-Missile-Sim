@@ -434,6 +434,11 @@ export function runSimulation(cfg: ScenarioConfig): {
   const maxTime = m.lifeTime_s ?? 120;
   let time = 0;
 
+  // Loft angle locked at first entry into loft-climb mode — computed once from
+  // the launch range ratio so it doesn't decay as horizDistE decreases each tick.
+  let lockedLoftAngleDeg = 0;
+  let loftAngleLocked = false;
+
   const maxSpeedMs = m.maxSpeed_mach ? m.maxSpeed_mach * speedOfSound(cfg.shooterAlt) : 1500;
 
   // Stat tracking for EngagementResult
@@ -509,6 +514,8 @@ export function runSimulation(cfg: ScenarioConfig): {
     activeRecorded: boolean;
     done: boolean;
     missile: MissileData;     // per-slot missile data (may differ from primary)
+    lockedLoftAngleDeg: number;
+    loftAngleLocked: boolean;
   }
 
   const salvoCount = Math.max(1, Math.min(4, cfg.salvoCount ?? 1));
@@ -533,6 +540,8 @@ export function runSimulation(cfg: ScenarioConfig): {
       activeRecorded: false,
       done: false,
       missile: slotMissile,
+      lockedLoftAngleDeg: 0,
+      loftAngleLocked: false,
     });
   }
 
@@ -860,16 +869,18 @@ export function runSimulation(cfg: ScenarioConfig): {
       // Pure SARH without IOG: illuminator lost → no PN commands.
       ax = 0; ay = 0; az = 0; limited = false;
     } else if (isLoftClimb) {
-      // Direct autopilot pitch command during loft boost phase.
-      // Scale loft angle proportional to range ratio: 0% at trigger range → 100% at max range.
-      // Short shots use little or no loft; only near-max-range shots get full loft angle.
-      const missileMaxRangeM = (m.maxRange_nm ?? 50) * NM_TO_M;
-      const rangeRatio = Math.min(1.0, Math.max(0,
-        (horizDistE - effectiveTriggerM) / Math.max(1, missileMaxRangeM - effectiveTriggerM),
-      ));
-      const effectiveLoftAngle = loftAngle * rangeRatio;
+      // Lock the loft angle on first entry — compute from the initial range ratio once
+      // so the pitch command doesn't decay as horizDistE closes during the burn.
+      if (!loftAngleLocked) {
+        const missileMaxRangeM = (m.maxRange_nm ?? 50) * NM_TO_M;
+        const rangeRatio = Math.min(1.0, Math.max(0,
+          (horizDistE - effectiveTriggerM) / Math.max(1, missileMaxRangeM - effectiveTriggerM),
+        ));
+        lockedLoftAngleDeg = loftAngle * rangeRatio;
+        loftAngleLocked = true;
+      }
       const bearingRad = Math.atan2(guidanceTargetX - missileState.x, guidanceTargetY - missileState.y);
-      const loftRad = (effectiveLoftAngle * Math.PI) / 180;
+      const loftRad = (lockedLoftAngleDeg * Math.PI) / 180;
       const rampFrac = Math.min(1.0, time / 3.0);
       const cmdPitch = rampFrac * loftRad;
       const desVx = Math.sin(bearingRad) * Math.cos(cmdPitch);
@@ -1246,13 +1257,16 @@ export function runSimulation(cfg: ScenarioConfig): {
         if (sFlight < sControlDelay) {
           sAx = 0; sAy = 0; sAz = 0;
         } else if (sIsLoftClimb) {
-          const sMissileMaxRangeM = (sm.maxRange_nm ?? 50) * NM_TO_M;
-          const sRangeRatio = Math.min(1.0, Math.max(0,
-            (sHorizDist - sEffectiveTriggerM) / Math.max(1, sMissileMaxRangeM - sEffectiveTriggerM),
-          ));
-          const sEffectiveLoftAngle = sLoftAngle * sRangeRatio;
+          if (!slot.loftAngleLocked) {
+            const sMissileMaxRangeM = (sm.maxRange_nm ?? 50) * NM_TO_M;
+            const sRangeRatio = Math.min(1.0, Math.max(0,
+              (sHorizDist - sEffectiveTriggerM) / Math.max(1, sMissileMaxRangeM - sEffectiveTriggerM),
+            ));
+            slot.lockedLoftAngleDeg = sLoftAngle * sRangeRatio;
+            slot.loftAngleLocked = true;
+          }
           const sBearingRad = Math.atan2(sGuidX - slot.state.x, sGuidY - slot.state.y);
-          const sLoftRad = (sEffectiveLoftAngle * Math.PI) / 180;
+          const sLoftRad = (slot.lockedLoftAngleDeg * Math.PI) / 180;
           const sRampFrac = Math.min(1.0, sFlight / 3.0);
           const sCmdPitch = sRampFrac * sLoftRad;
           const sDesVx = Math.sin(sBearingRad) * Math.cos(sCmdPitch);
