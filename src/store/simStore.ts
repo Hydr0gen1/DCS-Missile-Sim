@@ -92,6 +92,9 @@ interface SimStore {
   // Mobile tab (setup | view | data)
   mobileTab: 'setup' | 'view' | 'data';
 
+  // Incremented on every launch and reset — used to trigger camera re-framing
+  simVersion: number;
+
   // RWR audio
   rwrAudioMuted: boolean;
 
@@ -175,6 +178,7 @@ export const useSimStore = create<SimStore>((set) => ({
 
   appMode: 'tactical',
   mobileTab: 'view',
+  simVersion: 0,
   rwrAudioMuted: false,
   comparisonEntries: [],
   comparisonNextId: 1,
@@ -191,7 +195,7 @@ export const useSimStore = create<SimStore>((set) => ({
     return next;
   }),
   setSimFrames: (frames, result, maxRangeM, minRangeM, nezM, sX, sY) =>
-    set({
+    set((state) => ({
       simFrames: frames,
       simResult: result,
       simStatus: result.hit ? 'hit' : 'miss',
@@ -202,20 +206,22 @@ export const useSimStore = create<SimStore>((set) => ({
       nezM,
       shooterStartX: sX,
       shooterStartY: sY,
-    }),
+      simVersion: state.simVersion + 1,
+    })),
   setSimError: (msg) => set({ simError: msg, simStatus: 'error' }),
   setCurrentFrameIdx: (idx) => set({ currentFrameIdx: idx }),
   setIsPlaying: (v) => set({ isPlaying: v }),
   setPlaybackSpeed: (v) => set({ playbackSpeed: v }),
   resetSim: () =>
-    set({
+    set((state) => ({
       simFrames: [],
       currentFrameIdx: 0,
       simStatus: 'idle',
       simResult: null,
       simError: null,
       isPlaying: false,
-    }),
+      simVersion: state.simVersion + 1,
+    })),
   setShooterRole: (role) => set({ shooterRole: role, ...(role === 'ground' ? { shooterSpeed: 0, shooterAlt: 0 } : {}) }),
   addMissile: (m) => set((s) => ({ missiles: [...s.missiles, m] })),
   deleteMissile: (id) =>

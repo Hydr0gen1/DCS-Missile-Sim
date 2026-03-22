@@ -348,6 +348,15 @@ SD-10 and PL-12 use full schedule: `[12km:1.0, 18km:0.75, 30km:0.5, 48km:0.2]`
 
 Both the missile AND the target move during each 0.05 s tick. At Mach 6 combined closing speed (~2000 m/s), the target moves 12+ m per tick — testing only the target's endpoint (old algorithm) could miss direct hits when the actual CPA was mid-tick. The segment-vs-segment formulation finds the true minimum over the full parametric intersection of both paths.
 
+**Re-projection algorithm** (correct segment-vs-segment CPA): independent clamping of `s` and `t` produces wrong results near segment endpoints because the optimal `t` for a clamped `s` differs from the unclamped `t`. The fix clamps `s` first, re-projects `t` for the new `s`, then clamps `t` and re-projects `s` for the new `t`:
+1. Compute unclamped `s = (b·ee − c·dd) / denom`, `t = (a·ee − b·dd) / denom`
+2. If `s < 0`: set `s = 0`, recompute `t = −ee / c`
+3. If `s > 1`: set `s = 1`, recompute `t = (b − ee) / c`
+4. If `t < 0`: set `t = 0`, recompute `s = −dd / a`, clamp `s`
+5. If `t > 1`: set `t = 1`, recompute `s = (b − dd) / a`, clamp `s`
+
+Note: dot products `d·f` and `e·f` are named `dd` and `ee` in the code to avoid shadowing the direction vector variable names.
+
 ### 5. IR Seeker Behavior
 
 - **Pre-launch lock required**: IR missiles (`m.type === 'IR'`) cannot be fired if the target is beyond `seekerAcquisitionRange_nm`. `runSimulation()` returns a "cannot launch" result with `verdict: "Cannot launch — target beyond X seeker range"` before any simulation frames are generated.
@@ -443,6 +452,8 @@ Minimum altitude floor: 500 ft AGL (increased from 200 ft to prevent unrealistic
 - Secondary missiles share target state with lead but have independent kinematics/seekers
 - CM dispensing is gated on lead missile only (target defends against closest threat)
 - **Mixed salvo**: `ScenarioConfig.salvoMissiles` (index 0 = slot 2) overrides per-slot missile; `simStore.salvoMissileIds` holds the UI selection (null = same as primary). Each slot derives all physics parameters (thrust, drag, Cx, burn time, gLimit, seeker range, PN schedule, loft, control delay) independently from `slot.missile`.
+- **`SalvoSlot.cmSeduced`**: distinguishes countermeasure seduction from gimbal-caused lock loss on secondary missiles (mirrors the primary-missile `cmSeduced` boolean). Set to `true` on CM seduction, `false` on gimbal loss. Imaging seekers (AIM-9X, gimbalLimit ≥ 1.4 rad) on secondaries support the same 1.5 s grace period and re-acquisition logic as the primary missile.
+- **`SalvoSlot.state.gLoad`**: computed as `sqrt(ax²+ay²+az²) / G` after the gravity bias is applied, and stored on every secondary state update. Matches the primary missile's `gLoad` field so telemetry UI is consistent across all salvo slots.
 
 ### 11. CM Visual Objects (types.ts → CMObject, engagement.ts → activeCMObjects)
 
@@ -578,6 +589,61 @@ All three components `(ax, ay, az)` are produced by `proportionalNav()` and clam
 `TacticalDisplay.tsx` offers two views toggled by pressing **P** (or clicking the [PLAN]/[PROFILE] button):
 - **Plan view** (default): top-down, X = east, Y = north — the classic BVR picture.
 - **Profile view**: range-from-shooter (X) vs altitude (Y) — shows loft trajectory, altitude differentials, and SAM climb profiles.
+
+### 3D Camera Controls (FlyCamera)
+
+`FlyCamera` in `TacticalDisplay3D.tsx` supports both desktop and touch (mobile) input.
+
+**Desktop:**
+- Hold LMB + drag → orbit/rotate
+- Scroll wheel → zoom (dolly forward/back)
+- W/A/S/D or Arrow keys → fly forward/back/strafe
+- Q/E or Page Down/Up → fly down/up
+- Shift → 8× speed multiplier
+
+**Mobile touch gestures:**
+- **1-finger drag** → orbit/rotate (same as LMB+drag; sensitivity ×1.5 vs mouse)
+- **2-finger pinch** → zoom in/out (camera moves along its forward vector proportional to pinch delta × `MOVE_SPEED × 0.05`)
+- **2-finger pan (drag without pinching)** → strafe camera left/right/up/down (`MOVE_SPEED × 0.03` per pixel)
+- Transitioning from 2 fingers to 1 restarts single-finger rotation tracking cleanly
+
+Touch handlers use `{ passive: false }` and call `e.preventDefault()` to block browser scroll/zoom. The Canvas container div has `touchAction: 'none'` for the same reason.
+
+**State refs:** `lastTouch`, `lastPinchDist`, `lastTwoFingerCenter` — all `useRef`, reset on `touchend` to zero active touches.
+
+**Distance-proportional speed** (`getSpeedScale`): all zoom/pan/WASD movement speeds are multiplied by `max(0.05, dist / 30000)` where `dist` is the camera's distance to `sceneCenterRef`. At the 30 km reference distance scale = 1.0; at 3 km (dogfight) scale = 0.1 (fine control); at 100 km scale ≈ 3.3 (faster traversal). `sceneCenterRef` is updated to the new `lookAt` point on every version reset.
+
+### Camera Auto-Reset (simVersion)
+
+`simStore.simVersion: number` is a counter that increments on every `setSimFrames` (launch) and `resetSim`. `SceneContent` reads it and passes it to `FlyCamera` as the `version` prop.
+
+`FlyCamera` tracks `lastVersion` in a ref. When `version !== lastVersion.current` it:
+1. Copies `initialPos` to `camera.position`
+2. Recomputes `yaw` and `pitch` from `lookAt − initialPos`
+3. Applies `camera.rotation.order = 'YXZ'`
+
+This replaces the old `initialized.current` boolean that blocked all subsequent resets.
+
+**Camera position heuristics** (computed each render in `SceneContent`, captured by `useMemo([simVersion])`):
+
+```typescript
+const camDist = Math.max(rangeM * 0.55, 3000);          // min 3 km
+const camAlt  = Math.max(
+    midAltM + rangeM * 0.15,   // proportional to range
+    maxAltM * 0.8,              // above both aircraft
+    5000,                        // absolute floor 5 km
+);
+// Look-at accounts for aspect angle so beam shots frame correctly:
+const midX = rangeM * sin(aspectRad) * 0.5;
+const midZ = -rangeM * cos(aspectRad) * 0.5;
+```
+
+| Scenario | Range | camDist | camAlt | Effect |
+|---|---|---|---|---|
+| BVR 30 nm | 55,560 m | 30,558 m | 15,000 m | Wide view of full arc |
+| BVR 10 nm | 18,520 m | 10,186 m | 8,000 m | Medium view |
+| Dogfight 2 nm | 3,704 m | 3,000 m (min) | 5,000 m (min) | Close, aircraft visible |
+| SAM 10 nm | 18,520 m | 10,186 m | 10,000 m | High for climb profile |
 
 ### Remaining gaps
 
