@@ -1,6 +1,6 @@
 # DCS Missile Sim
 
-A browser-based air-to-air and surface-to-air missile engagement simulator built on physics data extracted directly from DCS World's Lua datamine. Simulate 96 real missiles with accurate drag, thrust, proportional navigation, RWR/MAWS behaviour, countermeasures, and full 3D flight paths — no installation required beyond `npm`.
+A browser-based air-to-air and surface-to-air missile engagement simulator built on physics data extracted directly from DCS World's Lua datamine. Simulate 97 real missiles with accurate drag, thrust, proportional navigation, RWR/MAWS behaviour, countermeasures, and full 3D flight paths — no installation required beyond `npm`.
 
 Works on desktop and on iPhone (portrait, 375 px+).
 
@@ -204,12 +204,13 @@ Add the current engagement with **Add Current**. Columns: missile, maneuver, ran
 | **Hit detection** | Segment-vs-segment CPA across both missile and target paths each tick; 12 m kill radius |
 | **Countermeasures** | DCS k3–k11 Doppler seduction model for chaff/flares |
 | **Gravity bias** | Autopilot adds +G to the vertical channel every tick so the missile holds altitude at baseline; PN provides corrections relative to level flight |
+| **Battery life** | Each missile expires at its DCS `Life_Time` (e.g., AIM-120C 90 s, AIM-54C 200 s, AIM-174B 720 s); guidance and seeker die at that point — verdict reads "Miss — battery expired" |
 
 ---
 
 ## Data Source
 
-Missile parameters are extracted from the [Quaggles DCS Lua Datamine](https://github.com/Quaggles/dcs-lua-datamine) using `tools/dcs_data_extractor.py`. The resulting `src/data/missiles.json` contains 96 A2A and SAM missiles with DCS-accurate aerodynamics, propulsion, guidance, seeker, and DLZ data.
+Missile parameters are extracted from the [Quaggles DCS Lua Datamine](https://github.com/Quaggles/dcs-lua-datamine) using `tools/dcs_data_extractor.py`. The resulting `src/data/missiles.json` contains 97 A2A and SAM missiles with DCS-accurate aerodynamics, propulsion, guidance, seeker, DLZ, and battery-life data. The AIM-174B entry is sourced from the Currenthill mod.
 
 To update after a DCS patch:
 

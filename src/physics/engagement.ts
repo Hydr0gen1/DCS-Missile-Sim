@@ -431,7 +431,7 @@ export function runSimulation(cfg: ScenarioConfig): {
   // targetShouldManeuver: starts false; gate block sets it true when detection conditions met.
   let targetShouldManeuver = false;
 
-  const maxTime = 300;
+  const maxTime = m.lifeTime_s ?? 120;
   let time = 0;
 
   const maxSpeedMs = m.maxSpeed_mach ? m.maxSpeed_mach * speedOfSound(cfg.shooterAlt) : 1500;
@@ -1391,7 +1391,7 @@ export function runSimulation(cfg: ScenarioConfig): {
   }
 
   if (time >= maxTime && !hitDetected) {
-    missReason = 'timeout';
+    missReason = 'battery expired';
     const fdx = shooterState.x - targetState.x;
     const fdy = shooterState.y - targetState.y;
     fPoleNm = Math.sqrt(fdx * fdx + fdy * fdy) * M_TO_NM;
@@ -1741,6 +1741,7 @@ function buildVerdict(pk: number, hit: boolean, missReason: string): string {
     if (missReason === 'defeated by chaff') return 'Decoyed — seduced by chaff';
     if (missReason === 'seeker cannot acquire') return 'No launch — beyond seeker range';
     if (missReason === 'ground strike') return 'Miss — ground strike';
+    if (missReason === 'battery expired') return 'Miss — battery expired';
     if (missReason === 'timeout') return 'Miss — engagement timeout';
     return `Miss — ${missReason || 'unknown'}`;
   }
