@@ -84,6 +84,13 @@ export function fillMissingFields(m: MissileData): MissileData {
   // guidanceNav: standard ProNav constant
   if (p.guidanceNav == null) p.guidanceNav = 4.0;
 
+  // killDistance_m: estimate from type if not set
+  if (p.killDistance_m == null) {
+    if (p.type === 'IR') p.killDistance_m = 7;
+    else if (p.type === 'ARH') p.killDistance_m = 15;
+    else p.killDistance_m = 12; // SARH default
+  }
+
   return p;
 }
 

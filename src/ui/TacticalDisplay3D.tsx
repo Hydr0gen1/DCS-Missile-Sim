@@ -336,7 +336,7 @@ function FlyCamera({ initialPos, lookAt, version }: {
 
 function SceneContent() {
   const {
-    simFrames, currentFrameIdx, simStatus,
+    simFrames, currentFrameIdx, simStatus, simResult,
     maxRangeM, minRangeM, nezM,
     rangeNm, aspectAngleDeg, shooterRole,
     shooterAlt: storeShooterAlt,
@@ -473,6 +473,14 @@ function SceneContent() {
       <AircraftEntity pos={targetPos} color="#ff4444"
         vx={frame?.target.vx} vy={frame?.target.vy} vz={frame?.target.vzMs} />
 
+      {/* Kill radius sphere — shown on near-miss so user can see the proximity fuze envelope */}
+      {simStatus === 'miss' && simResult && simResult.missDistance < 200 && (
+        <mesh position={targetPos}>
+          <sphereGeometry args={[simResult.killRadius ?? 12, 16, 16]} />
+          <meshBasicMaterial color="#ff4444" transparent opacity={0.12} wireframe />
+        </mesh>
+      )}
+
       {/* Missiles (all salvo) */}
       {frame && (frame.missiles ?? [frame.missile]).map((msl, mi) => {
         if (mi > 0 && !msl.motorBurning && !msl.active && msl.speedMs < 1) return null;
@@ -536,6 +544,9 @@ function HUDOverlay({ mobile }: { mobile?: boolean }) {
             {isDone && simResult && (
               <span style={{ color: simStatus === 'hit' ? '#00ff80' : '#ff4444', marginLeft: 6 }}>
                 {simResult.verdict}
+                {!simResult.hit && simResult.missDistance < 200 && (
+                  <span style={{ color: '#aaaaaa' }}> CPA {simResult.missDistance.toFixed(1)}m</span>
+                )}
               </span>
             )}
           </>
@@ -573,6 +584,9 @@ function HUDOverlay({ mobile }: { mobile?: boolean }) {
           </div>
           {simResult.pk > 0 && (
             <div style={hud.row}><span style={hud.dim}>Pk </span>{(simResult.pk * 100).toFixed(0)}<span style={hud.unit}>%</span></div>
+          )}
+          {!simResult.hit && simResult.missDistance < 200 && (
+            <div style={hud.row}><span style={hud.dim}>CPA </span>{simResult.missDistance.toFixed(1)}<span style={hud.unit}>m</span></div>
           )}
         </>
       )}
