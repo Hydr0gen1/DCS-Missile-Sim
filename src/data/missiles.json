@@ -10,7 +10,7 @@
     "extractedAt": "2026-03-18T02:24:18Z",
     "mass_kg": 49.0,
     "diameter_mm": 178.0,
-    "reference_area_m2": null,
+    "reference_area_m2": 0.024885,
     "seeker": "Active Radar (ARH)",
     "seekerSpec": {
       "type": "ARH",
@@ -25,21 +25,21 @@
         {
           "name": "accel",
           "duration_s": 2.5,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 8317.6,
+          "fuelFlow_kg_s": 3.72
         }
       ],
       "totalBurnTime_s": 2.5,
-      "totalFuelMass_kg": null,
-      "massAtBurnout_kg": null
+      "totalFuelMass_kg": 9.3,
+      "massAtBurnout_kg": 39.7
     },
     "aerodynamics": {
       "Cx": {
-        "k0": null,
-        "k1": null,
-        "k2": null,
-        "k3": null,
-        "k4": null
+        "k0": 0.023,
+        "k1": 0.0414,
+        "k2": 0.012,
+        "k3": -0.0069,
+        "k4": 0.5
       },
       "Cy": {
         "k0": null,
@@ -113,16 +113,17 @@
     },
     "ccm_k0": null,
     "motorBurnTime_s": 2.5,
-    "thrust_N": null,
-    "massBurnout_kg": null,
-    "dragCoefficient": null,
-    "referenceArea_m2": null,
+    "thrust_N": 8317.6,
+    "massBurnout_kg": 39.7,
+    "dragCoefficient": 0.023,
+    "referenceArea_m2": 0.024885,
     "gLimit": 16.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 4.32,
     "loftAngle_deg": null,
     "maxSpeed_mach": 1.4,
-    "maxRange_nm": 4.32
+    "maxRange_nm": 4.32,
+    "dataSource": "old_api_estimated"
   },
   {
     "id": "aim-120",
@@ -1054,7 +1055,7 @@
     "extractedAt": "2026-03-18T02:24:19Z",
     "mass_kg": 727.0,
     "diameter_mm": 585.0,
-    "reference_area_m2": null,
+    "reference_area_m2": 0.268783,
     "seeker": "Active Radar (ARH)",
     "seekerSpec": {
       "type": "ARH",
@@ -1069,21 +1070,21 @@
         {
           "name": "march",
           "duration_s": 1.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 3564.7,
+          "fuelFlow_kg_s": 254.45
         }
       ],
       "totalBurnTime_s": 1.0,
-      "totalFuelMass_kg": null,
-      "massAtBurnout_kg": null
+      "totalFuelMass_kg": 254.45,
+      "massAtBurnout_kg": 472.55
     },
     "aerodynamics": {
       "Cx": {
-        "k0": null,
-        "k1": null,
-        "k2": null,
-        "k3": null,
-        "k4": null
+        "k0": 1.0,
+        "k1": 0.25,
+        "k2": 1.0,
+        "k3": 0.6,
+        "k4": 1.31
       },
       "Cy": {
         "k0": null,
@@ -1132,7 +1133,7 @@
     },
     "warhead": {
       "type": "blast_frag",
-      "explosiveMass_kg": null,
+      "explosiveMass_kg": 269.9,
       "reference": null
     },
     "dlz": {
@@ -1157,16 +1158,17 @@
     },
     "ccm_k0": null,
     "motorBurnTime_s": 1.0,
-    "thrust_N": null,
-    "massBurnout_kg": null,
-    "dragCoefficient": null,
-    "referenceArea_m2": null,
+    "thrust_N": 3564.7,
+    "massBurnout_kg": 472.55,
+    "dragCoefficient": 1.0,
+    "referenceArea_m2": 0.268783,
     "gLimit": 5.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 5.4,
     "loftAngle_deg": null,
     "maxSpeed_mach": 0.45,
-    "maxRange_nm": 10.8
+    "maxRange_nm": 10.8,
+    "dataSource": "old_api_estimated"
   },
   {
     "id": "hj-12",
@@ -1179,7 +1181,7 @@
     "extractedAt": "2026-03-18T02:24:19Z",
     "mass_kg": 15.5,
     "diameter_mm": 135.0,
-    "reference_area_m2": null,
+    "reference_area_m2": 0.014314,
     "seeker": "Active Radar (ARH)",
     "seekerSpec": {
       "type": "ARH",
@@ -1192,29 +1194,29 @@
     "propulsion": {
       "phases": [
         {
-          "name": "accel",
+          "name": "boost",
           "duration_s": 0.5,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 588.4,
+          "fuelFlow_kg_s": 0.6
         },
         {
-          "name": "march",
+          "name": "accel",
           "duration_s": 2.75,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 1412.2,
+          "fuelFlow_kg_s": 0.8
         }
       ],
       "totalBurnTime_s": 3.25,
-      "totalFuelMass_kg": null,
-      "massAtBurnout_kg": null
+      "totalFuelMass_kg": 2.5,
+      "massAtBurnout_kg": 13.0
     },
     "aerodynamics": {
       "Cx": {
-        "k0": null,
-        "k1": null,
-        "k2": null,
-        "k3": null,
-        "k4": null
+        "k0": 1.0,
+        "k1": 0.4,
+        "k2": 0.4,
+        "k3": 0.2,
+        "k4": 1.3
       },
       "Cy": {
         "k0": null,
@@ -1279,16 +1281,17 @@
     },
     "ccm_k0": null,
     "motorBurnTime_s": 3.25,
-    "thrust_N": null,
-    "massBurnout_kg": null,
-    "dragCoefficient": null,
-    "referenceArea_m2": null,
+    "thrust_N": 1412.2,
+    "massBurnout_kg": 13.0,
+    "dragCoefficient": 1.0,
+    "referenceArea_m2": 0.014314,
     "gLimit": 9.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 4.59,
     "loftAngle_deg": null,
     "maxSpeed_mach": 0.95,
-    "maxRange_nm": 4.59
+    "maxRange_nm": 4.59,
+    "dataSource": "old_api_estimated"
   },
   {
     "id": "mica-r",
@@ -1839,7 +1842,7 @@
     "extractedAt": "2026-03-18T02:24:20Z",
     "mass_kg": 32.0,
     "diameter_mm": 120.0,
-    "reference_area_m2": null,
+    "reference_area_m2": 0.01131,
     "seeker": "Infrared (IR)",
     "seekerSpec": {
       "type": "IR",
@@ -1854,27 +1857,27 @@
         {
           "name": "accel",
           "duration_s": 3.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 2342.6,
+          "fuelFlow_kg_s": 2.6133
         },
         {
           "name": "march",
           "duration_s": 7.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 156.9,
+          "fuelFlow_kg_s": 0.48
         }
       ],
       "totalBurnTime_s": 10.0,
-      "totalFuelMass_kg": null,
-      "massAtBurnout_kg": null
+      "totalFuelMass_kg": 11.2,
+      "massAtBurnout_kg": 20.8
     },
     "aerodynamics": {
       "Cx": {
-        "k0": null,
-        "k1": null,
-        "k2": null,
-        "k3": null,
-        "k4": null
+        "k0": 0.023,
+        "k1": 0.0414,
+        "k2": 0.012,
+        "k3": -0.0069,
+        "k4": 0.5
       },
       "Cy": {
         "k0": null,
@@ -1939,16 +1942,17 @@
     },
     "ccm_k0": 1.0,
     "motorBurnTime_s": 10.0,
-    "thrust_N": null,
-    "massBurnout_kg": null,
-    "dragCoefficient": null,
-    "referenceArea_m2": null,
+    "thrust_N": 2342.6,
+    "massBurnout_kg": 20.8,
+    "dragCoefficient": 0.023,
+    "referenceArea_m2": 0.01131,
     "gLimit": 16.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 7.02,
     "loftAngle_deg": null,
     "maxSpeed_mach": 1.8,
-    "maxRange_nm": 2.27
+    "maxRange_nm": 2.27,
+    "dataSource": "old_api_estimated"
   },
   {
     "id": "sa9m333",
@@ -1961,7 +1965,7 @@
     "extractedAt": "2026-03-18T02:24:20Z",
     "mass_kg": 39.0,
     "diameter_mm": 120.0,
-    "reference_area_m2": null,
+    "reference_area_m2": 0.01131,
     "seeker": "Infrared (IR)",
     "seekerSpec": {
       "type": "IR",
@@ -1976,27 +1980,27 @@
         {
           "name": "accel",
           "duration_s": 3.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 3426.0,
+          "fuelFlow_kg_s": 3.185
         },
         {
           "name": "march",
           "duration_s": 5.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 191.2,
+          "fuelFlow_kg_s": 0.819
         }
       ],
       "totalBurnTime_s": 8.0,
-      "totalFuelMass_kg": null,
-      "massAtBurnout_kg": null
+      "totalFuelMass_kg": 13.65,
+      "massAtBurnout_kg": 25.35
     },
     "aerodynamics": {
       "Cx": {
-        "k0": null,
-        "k1": null,
-        "k2": null,
-        "k3": null,
-        "k4": null
+        "k0": 0.023,
+        "k1": 0.0414,
+        "k2": 0.012,
+        "k3": -0.0069,
+        "k4": 0.5
       },
       "Cy": {
         "k0": null,
@@ -2061,16 +2065,17 @@
     },
     "ccm_k0": 0.5,
     "motorBurnTime_s": 8.0,
-    "thrust_N": null,
-    "massBurnout_kg": null,
-    "dragCoefficient": null,
-    "referenceArea_m2": null,
+    "thrust_N": 3426.0,
+    "massBurnout_kg": 25.35,
+    "dragCoefficient": 0.023,
+    "referenceArea_m2": 0.01131,
     "gLimit": 16.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 8.1,
     "loftAngle_deg": null,
     "maxSpeed_mach": 2.0,
-    "maxRange_nm": 2.7
+    "maxRange_nm": 2.7,
+    "dataSource": "old_api_estimated"
   },
   {
     "id": "igla-1e",
@@ -2083,7 +2088,7 @@
     "extractedAt": "2026-03-18T02:24:19Z",
     "mass_kg": 10.8,
     "diameter_mm": 72.0,
-    "reference_area_m2": null,
+    "reference_area_m2": 0.004072,
     "seeker": "Infrared (IR)",
     "seekerSpec": {
       "type": "IR",
@@ -2096,29 +2101,35 @@
     "propulsion": {
       "phases": [
         {
+          "name": "boost",
+          "duration_s": 0.065,
+          "thrust_N": 3349.3,
+          "fuelFlow_kg_s": 1.8462
+        },
+        {
           "name": "accel",
-          "duration_s": 3.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "duration_s": 1.9,
+          "thrust_N": 2613.0,
+          "fuelFlow_kg_s": 1.1842
         },
         {
           "name": "march",
-          "duration_s": 3.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "duration_s": 6.6,
+          "thrust_N": 685.9,
+          "fuelFlow_kg_s": 0.3379
         }
       ],
-      "totalBurnTime_s": 6.0,
-      "totalFuelMass_kg": null,
-      "massAtBurnout_kg": null
+      "totalBurnTime_s": 8.56,
+      "totalFuelMass_kg": 4.6,
+      "massAtBurnout_kg": 6.2
     },
     "aerodynamics": {
       "Cx": {
-        "k0": null,
-        "k1": null,
-        "k2": null,
-        "k3": null,
-        "k4": null
+        "k0": 1.0,
+        "k1": 1.15,
+        "k2": 0.6,
+        "k3": 0.4,
+        "k4": 1.5
       },
       "Cy": {
         "k0": null,
@@ -2167,7 +2178,7 @@
     },
     "warhead": {
       "type": "blast_frag",
-      "explosiveMass_kg": null,
+      "explosiveMass_kg": 0.4,
       "reference": null
     },
     "dlz": {
@@ -2192,16 +2203,17 @@
     },
     "ccm_k0": 0.5,
     "motorBurnTime_s": 6.0,
-    "thrust_N": null,
-    "massBurnout_kg": null,
-    "dragCoefficient": null,
-    "referenceArea_m2": null,
+    "thrust_N": 3349.3,
+    "massBurnout_kg": 6.2,
+    "dragCoefficient": 1.0,
+    "referenceArea_m2": 0.004072,
     "gLimit": 16.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 5.4,
     "loftAngle_deg": null,
     "maxSpeed_mach": 2.2,
-    "maxRange_nm": 2.43
+    "maxRange_nm": 2.43,
+    "dataSource": "old_api_estimated"
   },
   {
     "id": "gar-8",
@@ -3384,7 +3396,7 @@
     "extractedAt": "2026-03-18T02:24:20Z",
     "mass_kg": 85.73,
     "diameter_mm": 127.0,
-    "reference_area_m2": null,
+    "reference_area_m2": 0.012668,
     "seeker": "Infrared (IR)",
     "seekerSpec": {
       "type": "IR",
@@ -3399,21 +3411,21 @@
         {
           "name": "accel",
           "duration_s": 5.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 4954.7,
+          "fuelFlow_kg_s": 6.0011
         }
       ],
       "totalBurnTime_s": 5.0,
-      "totalFuelMass_kg": null,
-      "massAtBurnout_kg": null
+      "totalFuelMass_kg": 30.01,
+      "massAtBurnout_kg": 55.72
     },
     "aerodynamics": {
       "Cx": {
-        "k0": null,
-        "k1": null,
-        "k2": null,
-        "k3": null,
-        "k4": null
+        "k0": 0.0152,
+        "k1": 0.0274,
+        "k2": 0.012,
+        "k3": -0.0046,
+        "k4": 0.5
       },
       "Cy": {
         "k0": null,
@@ -3453,7 +3465,7 @@
     },
     "warhead": {
       "type": "blast_frag",
-      "explosiveMass_kg": null,
+      "explosiveMass_kg": 9.44,
       "reference": null
     },
     "dlz": {
@@ -3478,16 +3490,17 @@
     },
     "ccm_k0": 0.5,
     "motorBurnTime_s": 5.0,
-    "thrust_N": null,
-    "massBurnout_kg": null,
-    "dragCoefficient": null,
-    "referenceArea_m2": null,
+    "thrust_N": 4954.7,
+    "massBurnout_kg": 55.72,
+    "dragCoefficient": 0.0152,
+    "referenceArea_m2": 0.012668,
     "gLimit": 40.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 10.8,
     "loftAngle_deg": null,
     "maxSpeed_mach": 2.7,
-    "maxRange_nm": 7.56
+    "maxRange_nm": 7.56,
+    "dataSource": "old_api_estimated"
   },
   {
     "id": "oh58d-fim-92",
@@ -3500,7 +3513,7 @@
     "extractedAt": "2026-03-18T02:24:19Z",
     "mass_kg": 10.1,
     "diameter_mm": 70.0,
-    "reference_area_m2": null,
+    "reference_area_m2": 0.004072,
     "seeker": "Infrared (IR)",
     "seekerSpec": {
       "type": "IR",
@@ -3513,29 +3526,35 @@
     "propulsion": {
       "phases": [
         {
+          "name": "boost",
+          "duration_s": 0.05,
+          "thrust_N": 3726.5,
+          "fuelFlow_kg_s": 2.0
+        },
+        {
           "name": "accel",
-          "duration_s": 3.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "duration_s": 2.7,
+          "thrust_N": 2123.5,
+          "fuelFlow_kg_s": 0.9333
         },
         {
           "name": "march",
-          "duration_s": 3.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "duration_s": 5.1,
+          "thrust_N": 882.6,
+          "fuelFlow_kg_s": 0.4
         }
       ],
-      "totalBurnTime_s": 6.0,
-      "totalFuelMass_kg": null,
-      "massAtBurnout_kg": null
+      "totalBurnTime_s": 7.85,
+      "totalFuelMass_kg": 4.66,
+      "massAtBurnout_kg": 5.44
     },
     "aerodynamics": {
       "Cx": {
-        "k0": null,
-        "k1": null,
-        "k2": null,
-        "k3": null,
-        "k4": null
+        "k0": 1.0,
+        "k1": 1.15,
+        "k2": 0.8,
+        "k3": 0.4,
+        "k4": 1.5
       },
       "Cy": {
         "k0": null,
@@ -3609,16 +3628,17 @@
     },
     "ccm_k0": 0.5,
     "motorBurnTime_s": 6.0,
-    "thrust_N": null,
-    "massBurnout_kg": null,
-    "dragCoefficient": null,
-    "referenceArea_m2": null,
+    "thrust_N": 3726.5,
+    "massBurnout_kg": 5.44,
+    "dragCoefficient": 1.0,
+    "referenceArea_m2": 0.004072,
     "gLimit": 18.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 5.4,
     "loftAngle_deg": null,
     "maxSpeed_mach": 2.2,
-    "maxRange_nm": 3.24
+    "maxRange_nm": 3.24,
+    "dataSource": "old_api_estimated"
   },
   {
     "id": "fim-92c",
@@ -3631,7 +3651,7 @@
     "extractedAt": "2026-03-18T02:24:19Z",
     "mass_kg": 10.1,
     "diameter_mm": 70.0,
-    "reference_area_m2": null,
+    "reference_area_m2": 0.004072,
     "seeker": "Infrared (IR)",
     "seekerSpec": {
       "type": "IR",
@@ -3644,29 +3664,35 @@
     "propulsion": {
       "phases": [
         {
+          "name": "boost",
+          "duration_s": 0.05,
+          "thrust_N": 3726.5,
+          "fuelFlow_kg_s": 2.0
+        },
+        {
           "name": "accel",
-          "duration_s": 3.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "duration_s": 2.7,
+          "thrust_N": 2123.5,
+          "fuelFlow_kg_s": 0.9333
         },
         {
           "name": "march",
-          "duration_s": 3.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "duration_s": 5.1,
+          "thrust_N": 882.6,
+          "fuelFlow_kg_s": 0.4
         }
       ],
-      "totalBurnTime_s": 6.0,
-      "totalFuelMass_kg": null,
-      "massAtBurnout_kg": null
+      "totalBurnTime_s": 7.85,
+      "totalFuelMass_kg": 4.66,
+      "massAtBurnout_kg": 5.44
     },
     "aerodynamics": {
       "Cx": {
-        "k0": null,
-        "k1": null,
-        "k2": null,
-        "k3": null,
-        "k4": null
+        "k0": 1.0,
+        "k1": 1.15,
+        "k2": 0.8,
+        "k3": 0.4,
+        "k4": 1.5
       },
       "Cy": {
         "k0": null,
@@ -3715,7 +3741,7 @@
     },
     "warhead": {
       "type": "blast_frag",
-      "explosiveMass_kg": null,
+      "explosiveMass_kg": 1.02,
       "reference": null
     },
     "dlz": {
@@ -3740,16 +3766,17 @@
     },
     "ccm_k0": 0.5,
     "motorBurnTime_s": 6.0,
-    "thrust_N": null,
-    "massBurnout_kg": null,
-    "dragCoefficient": null,
-    "referenceArea_m2": null,
+    "thrust_N": 3726.5,
+    "massBurnout_kg": 5.44,
+    "dragCoefficient": 1.0,
+    "referenceArea_m2": 0.004072,
     "gLimit": 18.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 5.4,
     "loftAngle_deg": null,
     "maxSpeed_mach": 2.2,
-    "maxRange_nm": 3.24
+    "maxRange_nm": 3.24,
+    "dataSource": "old_api_estimated"
   },
   {
     "id": "mica-t",
@@ -4117,7 +4144,7 @@
     "extractedAt": "2026-03-18T02:24:19Z",
     "mass_kg": 18.7,
     "diameter_mm": 90.0,
-    "reference_area_m2": null,
+    "reference_area_m2": 0.006362,
     "seeker": "Infrared (IR)",
     "seekerSpec": {
       "type": "IR",
@@ -4128,18 +4155,31 @@
       "maxLOSRate_rad_s": 99.9
     },
     "propulsion": {
-      "phases": [],
-      "totalBurnTime_s": null,
-      "totalFuelMass_kg": null,
-      "massAtBurnout_kg": null
+      "phases": [
+        {
+          "name": "boost",
+          "duration_s": 0.06,
+          "thrust_N": 9349.0,
+          "fuelFlow_kg_s": 4.3333
+        },
+        {
+          "name": "accel",
+          "duration_s": 2.2,
+          "thrust_N": 6688.1,
+          "fuelFlow_kg_s": 2.8182
+        }
+      ],
+      "totalBurnTime_s": 2.26,
+      "totalFuelMass_kg": 6.46,
+      "massAtBurnout_kg": 12.24
     },
     "aerodynamics": {
       "Cx": {
-        "k0": null,
-        "k1": null,
-        "k2": null,
-        "k3": null,
-        "k4": null
+        "k0": 0.6,
+        "k1": 1.6,
+        "k2": 0.68,
+        "k3": 0.55,
+        "k4": 1.85
       },
       "Cy": {
         "k0": null,
@@ -4188,7 +4228,7 @@
     },
     "warhead": {
       "type": "blast_frag",
-      "explosiveMass_kg": null,
+      "explosiveMass_kg": 3.0,
       "reference": null
     },
     "dlz": {
@@ -4212,17 +4252,18 @@
       "flightTime_s": null
     },
     "ccm_k0": 0.5,
-    "motorBurnTime_s": null,
-    "thrust_N": null,
-    "massBurnout_kg": null,
-    "dragCoefficient": null,
-    "referenceArea_m2": null,
+    "motorBurnTime_s": 2.26,
+    "thrust_N": 9349.0,
+    "massBurnout_kg": 12.24,
+    "dragCoefficient": 0.6,
+    "referenceArea_m2": 0.006362,
     "gLimit": 32.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 5.4,
     "loftAngle_deg": null,
     "maxSpeed_mach": 2.5,
-    "maxRange_nm": 3.24
+    "maxRange_nm": 3.24,
+    "dataSource": "old_api_estimated"
   },
   {
     "id": "pl-5eii",
@@ -6642,7 +6683,7 @@
     "extractedAt": "2026-03-18T02:24:20Z",
     "mass_kg": 600.0,
     "diameter_mm": 330.0,
-    "reference_area_m2": null,
+    "reference_area_m2": 0.08553,
     "seeker": "Semi-Active Radar (SARH)",
     "seekerSpec": {
       "type": "SARH",
@@ -6657,27 +6698,27 @@
         {
           "name": "accel",
           "duration_s": 4.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 59340.7,
+          "fuelFlow_kg_s": 36.75
         },
         {
           "name": "march",
           "duration_s": 22.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 2942.0,
+          "fuelFlow_kg_s": 2.8636
         }
       ],
       "totalBurnTime_s": 26.0,
-      "totalFuelMass_kg": null,
-      "massAtBurnout_kg": null
+      "totalFuelMass_kg": 210.0,
+      "massAtBurnout_kg": 390.0
     },
     "aerodynamics": {
       "Cx": {
-        "k0": null,
-        "k1": null,
-        "k2": null,
-        "k3": null,
-        "k4": null
+        "k0": 0.039,
+        "k1": 0.0702,
+        "k2": 0.012,
+        "k3": -0.0117,
+        "k4": 0.5
       },
       "Cy": {
         "k0": null,
@@ -6742,16 +6783,17 @@
     },
     "ccm_k0": 1.0,
     "motorBurnTime_s": 26.0,
-    "thrust_N": null,
-    "massBurnout_kg": null,
-    "dragCoefficient": null,
-    "referenceArea_m2": null,
+    "thrust_N": 59340.7,
+    "massBurnout_kg": 390.0,
+    "dragCoefficient": 0.039,
+    "referenceArea_m2": 0.08553,
     "gLimit": 16.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 13.5,
     "loftAngle_deg": null,
     "maxSpeed_mach": 2.2,
-    "maxRange_nm": 13.5
+    "maxRange_nm": 13.5,
+    "dataSource": "old_api_estimated"
   },
   {
     "id": "sa48h6e2",
@@ -6885,7 +6927,7 @@
     "extractedAt": "2026-03-18T02:24:20Z",
     "mass_kg": 690.0,
     "diameter_mm": 400.0,
-    "reference_area_m2": null,
+    "reference_area_m2": 0.125664,
     "seeker": "Semi-Active Radar (SARH)",
     "seekerSpec": {
       "type": "SARH",
@@ -6900,27 +6942,27 @@
         {
           "name": "accel",
           "duration_s": 3.2,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 113812.4,
+          "fuelFlow_kg_s": 52.8281
         },
         {
           "name": "march",
           "duration_s": 21.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 3383.3,
+          "fuelFlow_kg_s": 3.45
         }
       ],
       "totalBurnTime_s": 24.2,
-      "totalFuelMass_kg": null,
-      "massAtBurnout_kg": null
+      "totalFuelMass_kg": 241.5,
+      "massAtBurnout_kg": 448.5
     },
     "aerodynamics": {
       "Cx": {
-        "k0": null,
-        "k1": null,
-        "k2": null,
-        "k3": null,
-        "k4": null
+        "k0": 0.039,
+        "k1": 0.0702,
+        "k2": 0.012,
+        "k3": -0.0117,
+        "k4": 0.5
       },
       "Cy": {
         "k0": null,
@@ -6985,16 +7027,17 @@
     },
     "ccm_k0": 3.0,
     "motorBurnTime_s": 24.2,
-    "thrust_N": null,
-    "massBurnout_kg": null,
-    "dragCoefficient": null,
-    "referenceArea_m2": null,
+    "thrust_N": 113812.4,
+    "massBurnout_kg": 448.5,
+    "dragCoefficient": 0.039,
+    "referenceArea_m2": 0.125664,
     "gLimit": 10.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 5.94,
     "loftAngle_deg": null,
     "maxSpeed_mach": 2.2,
-    "maxRange_nm": 13.5
+    "maxRange_nm": 13.5,
+    "dataSource": "old_api_estimated"
   },
   {
     "id": "sa5v28",
@@ -7261,7 +7304,7 @@
     "extractedAt": "2026-03-18T02:24:20Z",
     "mass_kg": 715.0,
     "diameter_mm": 400.0,
-    "reference_area_m2": null,
+    "reference_area_m2": 0.125664,
     "seeker": "Semi-Active Radar (SARH)",
     "seekerSpec": {
       "type": "SARH",
@@ -7276,21 +7319,21 @@
         {
           "name": "accel",
           "duration_s": 18.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 29873.0,
+          "fuelFlow_kg_s": 13.9028
         }
       ],
       "totalBurnTime_s": 18.0,
-      "totalFuelMass_kg": null,
-      "massAtBurnout_kg": null
+      "totalFuelMass_kg": 250.25,
+      "massAtBurnout_kg": 464.75
     },
     "aerodynamics": {
       "Cx": {
-        "k0": null,
-        "k1": null,
-        "k2": null,
-        "k3": null,
-        "k4": null
+        "k0": 0.023,
+        "k1": 0.0414,
+        "k2": 0.012,
+        "k3": -0.0069,
+        "k4": 0.5
       },
       "Cy": {
         "k0": null,
@@ -7343,7 +7386,7 @@
     },
     "warhead": {
       "type": "blast_frag",
-      "explosiveMass_kg": null,
+      "explosiveMass_kg": 59.0,
       "reference": null
     },
     "dlz": {
@@ -7368,16 +7411,17 @@
     },
     "ccm_k0": 0.5,
     "motorBurnTime_s": 18.0,
-    "thrust_N": null,
-    "massBurnout_kg": null,
-    "dragCoefficient": null,
-    "referenceArea_m2": null,
+    "thrust_N": 29873.0,
+    "massBurnout_kg": 464.75,
+    "dragCoefficient": 0.023,
+    "referenceArea_m2": 0.125664,
     "gLimit": 24.0,
     "guidanceNav": 1.0,
     "seekerAcquisitionRange_nm": 16.2,
     "loftAngle_deg": null,
     "maxSpeed_mach": 3.6,
-    "maxRange_nm": 22.68
+    "maxRange_nm": 22.68,
+    "dataSource": "old_api_estimated"
   },
   {
     "id": "sa9m33",
@@ -7390,7 +7434,7 @@
     "extractedAt": "2026-03-18T02:24:20Z",
     "mass_kg": 126.3,
     "diameter_mm": 206.0,
-    "reference_area_m2": null,
+    "reference_area_m2": 0.033329,
     "seeker": "Semi-Active Radar (SARH)",
     "seekerSpec": {
       "type": "SARH",
@@ -7405,27 +7449,27 @@
         {
           "name": "accel",
           "duration_s": 3.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 14797.0,
+          "fuelFlow_kg_s": 10.3145
         },
         {
           "name": "march",
           "duration_s": 10.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 619.3,
+          "fuelFlow_kg_s": 1.3261
         }
       ],
       "totalBurnTime_s": 13.0,
-      "totalFuelMass_kg": null,
-      "massAtBurnout_kg": null
+      "totalFuelMass_kg": 44.2,
+      "massAtBurnout_kg": 82.09
     },
     "aerodynamics": {
       "Cx": {
-        "k0": null,
-        "k1": null,
-        "k2": null,
-        "k3": null,
-        "k4": null
+        "k0": 0.023,
+        "k1": 0.0414,
+        "k2": 0.012,
+        "k3": -0.0069,
+        "k4": 0.5
       },
       "Cy": {
         "k0": null,
@@ -7490,16 +7534,17 @@
     },
     "ccm_k0": 1.0,
     "motorBurnTime_s": 13.0,
-    "thrust_N": null,
-    "massBurnout_kg": null,
-    "dragCoefficient": null,
-    "referenceArea_m2": null,
+    "thrust_N": 14797.0,
+    "massBurnout_kg": 82.09,
+    "dragCoefficient": 0.023,
+    "referenceArea_m2": 0.033329,
     "gLimit": 14.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 4.59,
     "loftAngle_deg": null,
     "maxSpeed_mach": 2.1,
-    "maxRange_nm": 5.56
+    "maxRange_nm": 5.56,
+    "dataSource": "old_api_estimated"
   },
   {
     "id": "sa9m330",
@@ -7512,7 +7557,7 @@
     "extractedAt": "2026-03-18T02:24:20Z",
     "mass_kg": 165.0,
     "diameter_mm": 220.0,
-    "reference_area_m2": null,
+    "reference_area_m2": 0.038013,
     "seeker": "Semi-Active Radar (SARH)",
     "seekerSpec": {
       "type": "SARH",
@@ -7527,27 +7572,27 @@
         {
           "name": "accel",
           "duration_s": 4.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 23587.8,
+          "fuelFlow_kg_s": 10.1062
         },
         {
           "name": "march",
           "duration_s": 8.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 809.0,
+          "fuelFlow_kg_s": 2.1656
         }
       ],
       "totalBurnTime_s": 12.0,
-      "totalFuelMass_kg": null,
-      "massAtBurnout_kg": null
+      "totalFuelMass_kg": 57.75,
+      "massAtBurnout_kg": 107.25
     },
     "aerodynamics": {
       "Cx": {
-        "k0": null,
-        "k1": null,
-        "k2": null,
-        "k3": null,
-        "k4": null
+        "k0": 0.023,
+        "k1": 0.0414,
+        "k2": 0.012,
+        "k3": -0.0069,
+        "k4": 0.5
       },
       "Cy": {
         "k0": null,
@@ -7612,16 +7657,17 @@
     },
     "ccm_k0": 0.5,
     "motorBurnTime_s": 12.0,
-    "thrust_N": null,
-    "massBurnout_kg": null,
-    "dragCoefficient": null,
-    "referenceArea_m2": null,
+    "thrust_N": 23587.8,
+    "massBurnout_kg": 107.25,
+    "dragCoefficient": 0.023,
+    "referenceArea_m2": 0.038013,
     "gLimit": 16.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 6.48,
     "loftAngle_deg": null,
     "maxSpeed_mach": 3.0,
-    "maxRange_nm": 6.48
+    "maxRange_nm": 6.48,
+    "dataSource": "old_api_estimated"
   },
   {
     "id": "sa9m338k",
@@ -8934,7 +8980,7 @@
     "extractedAt": "2026-03-18T02:24:19Z",
     "mass_kg": 549.0,
     "diameter_mm": 420.0,
-    "reference_area_m2": null,
+    "reference_area_m2": 0.138544,
     "seeker": "Semi-Active Radar (SARH)",
     "seekerSpec": {
       "type": "SARH",
@@ -8947,23 +8993,23 @@
     "propulsion": {
       "phases": [
         {
-          "name": "march",
-          "duration_s": 17.5,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "name": "boost",
+          "duration_s": 2.5,
+          "thrust_N": 135331.8,
+          "fuelFlow_kg_s": 60.0
         }
       ],
-      "totalBurnTime_s": 17.5,
-      "totalFuelMass_kg": null,
-      "massAtBurnout_kg": null
+      "totalBurnTime_s": 2.5,
+      "totalFuelMass_kg": 150.0,
+      "massAtBurnout_kg": 399.0
     },
     "aerodynamics": {
       "Cx": {
-        "k0": null,
-        "k1": null,
-        "k2": null,
-        "k3": null,
-        "k4": null
+        "k0": 1.0,
+        "k1": 0.6,
+        "k2": 1.2,
+        "k3": 0.3,
+        "k4": 1.6
       },
       "Cy": {
         "k0": null,
@@ -9012,7 +9058,7 @@
     },
     "warhead": {
       "type": "blast_frag",
-      "explosiveMass_kg": null,
+      "explosiveMass_kg": 23.0,
       "reference": null
     },
     "dlz": {
@@ -9037,16 +9083,17 @@
     },
     "ccm_k0": null,
     "motorBurnTime_s": 17.5,
-    "thrust_N": null,
-    "massBurnout_kg": null,
-    "dragCoefficient": null,
-    "referenceArea_m2": null,
+    "thrust_N": 135331.8,
+    "massBurnout_kg": 399.0,
+    "dragCoefficient": 1.0,
+    "referenceArea_m2": 0.138544,
     "gLimit": 10.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 30.24,
     "loftAngle_deg": null,
     "maxSpeed_mach": 3.5,
-    "maxRange_nm": 30.24
+    "maxRange_nm": 30.24,
+    "dataSource": "old_api_estimated"
   },
   {
     "id": "hhq-9",
@@ -11062,7 +11109,7 @@
     "extractedAt": "2026-03-18T02:24:20Z",
     "mass_kg": 2388.0,
     "diameter_mm": 500.0,
-    "reference_area_m2": null,
+    "reference_area_m2": 0.19635,
     "seeker": "Semi-Active Radar (SARH)",
     "seekerSpec": {
       "type": "SARH",
@@ -11077,27 +11124,27 @@
         {
           "name": "accel",
           "duration_s": 3.3,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 214681.4,
+          "fuelFlow_kg_s": 177.2909
         },
         {
           "name": "march",
           "duration_s": 40.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 11709.1,
+          "fuelFlow_kg_s": 6.2685
         }
       ],
       "totalBurnTime_s": 43.3,
-      "totalFuelMass_kg": null,
-      "massAtBurnout_kg": null
+      "totalFuelMass_kg": 835.8,
+      "massAtBurnout_kg": 1552.2
     },
     "aerodynamics": {
       "Cx": {
-        "k0": null,
-        "k1": null,
-        "k2": null,
-        "k3": null,
-        "k4": null
+        "k0": 0.015,
+        "k1": 0.027,
+        "k2": 0.012,
+        "k3": -0.0045,
+        "k4": 0.5
       },
       "Cy": {
         "k0": null,
@@ -11137,7 +11184,7 @@
     },
     "warhead": {
       "type": "blast_frag",
-      "explosiveMass_kg": null,
+      "explosiveMass_kg": 196.0,
       "reference": null
     },
     "dlz": {
@@ -11162,16 +11209,17 @@
     },
     "ccm_k0": 3.0,
     "motorBurnTime_s": 43.3,
-    "thrust_N": null,
-    "massBurnout_kg": null,
-    "dragCoefficient": null,
-    "referenceArea_m2": null,
+    "thrust_N": 214681.4,
+    "massBurnout_kg": 1552.2,
+    "dragCoefficient": 0.015,
+    "referenceArea_m2": 0.19635,
     "gLimit": 6.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 21.6,
     "loftAngle_deg": null,
     "maxSpeed_mach": 2.6,
-    "maxRange_nm": 16.2
+    "maxRange_nm": 16.2,
+    "dataSource": "old_api_estimated"
   },
   {
     "id": "sm-1",
@@ -11844,7 +11892,7 @@
     "extractedAt": "2026-03-18T02:24:20Z",
     "mass_kg": 75.0,
     "diameter_mm": 150.0,
-    "reference_area_m2": null,
+    "reference_area_m2": 0.017671,
     "seeker": "Semi-Active Radar (SARH)",
     "seekerSpec": {
       "type": "SARH",
@@ -11858,28 +11906,28 @@
       "phases": [
         {
           "name": "accel",
-          "duration_s": 3.0,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "duration_s": 3.3,
+          "thrust_N": 11389.0,
+          "fuelFlow_kg_s": 5.5682
         },
         {
           "name": "march",
           "duration_s": 13.2,
-          "thrust_N": null,
-          "fuelFlow_kg_s": null
+          "thrust_N": 367.7,
+          "fuelFlow_kg_s": 0.5966
         }
       ],
-      "totalBurnTime_s": 16.2,
-      "totalFuelMass_kg": null,
-      "massAtBurnout_kg": null
+      "totalBurnTime_s": 16.5,
+      "totalFuelMass_kg": 26.25,
+      "massAtBurnout_kg": 48.75
     },
     "aerodynamics": {
       "Cx": {
-        "k0": null,
-        "k1": null,
-        "k2": null,
-        "k3": null,
-        "k4": null
+        "k0": 0.023,
+        "k1": 0.0414,
+        "k2": 0.012,
+        "k3": -0.0069,
+        "k4": 0.5
       },
       "Cy": {
         "k0": null,
@@ -11944,15 +11992,16 @@
     },
     "ccm_k0": 0.5,
     "motorBurnTime_s": 16.2,
-    "thrust_N": null,
-    "massBurnout_kg": null,
-    "dragCoefficient": null,
-    "referenceArea_m2": null,
+    "thrust_N": 11389.0,
+    "massBurnout_kg": 48.75,
+    "dragCoefficient": 0.023,
+    "referenceArea_m2": 0.017671,
     "gLimit": 14.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 4.32,
     "loftAngle_deg": null,
     "maxSpeed_mach": 2.0,
-    "maxRange_nm": 4.32
+    "maxRange_nm": 4.32,
+    "dataSource": "old_api_estimated"
   }
 ]

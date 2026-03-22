@@ -53,7 +53,10 @@ src/
     ├── MissileEditor.tsx      ← Missile data editor
     └── ComparisonPanel.tsx    ← Multi-engagement comparison table (COMPARE tab)
 tools/
-├── dcs_data_extractor.py      ← Main extraction CLI
+├── dcs_data_extractor.py      ← Main extraction CLI (new-API ModelData missiles)
+├── old_api_parser.py          ← Old-API missile parser (no ModelData — derives physics)
+├── warhead_parser.py          ← Warhead Lua parser (builds expl_mass lookup table)
+├── process_dcs_dump.py        ← Full pipeline: updates missiles.json, aircraft.json, dcsConstants.ts
 ├── lua_parser.py              ← DCS Lua table parser
 ├── model_data_map.py          ← ModelData index → name mapping + constants
 ├── schema_validator.py        ← Validates extracted missile entries
@@ -203,6 +206,43 @@ npm run build
 python tools/dcs_data_extractor.py --datamine-path ./datamine --missile AIM_120C
 ```
 
+### Old-API + warhead + aircraft pipeline (run after DCS patch or full rebuild)
+
+```bash
+# Fills null physics fields for old-API missiles, updates aircraft radar data,
+# updates CM coefficients in dcsConstants.ts, fills warhead explosive mass.
+python tools/process_dcs_dump.py \
+    --datamine ./datamine \
+    --missiles ./src/data/missiles.json \
+    --aircraft ./src/data/aircraft.json \
+    --constants ./src/data/dcsConstants.ts
+```
+
+---
+
+## Old-API Physics Derivation (tools/old_api_parser.py)
+
+Old-API missiles (no ModelData) use these derivation rules:
+
+**Drag (5-coeff Cx)**:
+- If `fm.cx_coeff = {k0, k1, k2, k3, k4}` present: use directly (with `fm.caliber`-based reference area)
+- Else: estimate from `Cx_pil`: `k0 = 0.015 + (Cx_pil - 1) × 0.008`, transonic `k1 = k0 × 1.8`, `k2 = 0.012`, supersonic shift `k3 = -k0 × 0.3`, `k4 = 0.5`
+
+**Reference area**:
+- If `fm.caliber` present (meters): `A = π × (caliber/2)²`
+- Else from `Diam` field (mm): `A = π × (Diam_mm/1000/2)²`
+- Note: old-API missiles use physical cross-section area, unlike new-API which uses a larger aerodynamic reference area
+
+**Thrust (multi-phase)**:
+- If `march`/`march2`/`boost`/`booster` sub-blocks present with `impulse`/`fuel_mass`/`work_time`:
+  - `thrust_N = impulse × fuel_mass × 9.81 / work_time` (Isp × g × mdot)
+  - `fuelFlow_kg_s = fuel_mass / work_time`
+- Else kinematic estimate from `t_acc`/`v_mid`:
+  - `F_accel = m_avg × (v_mid / t_acc) + F_drag_avg`
+  - `F_march = F_drag_at_vmid × 1.3` (sustain cruise speed)
+
+**`dataSource` field**: `'old_api_estimated'` marks entries derived by this parser; `'modeldata'` marks DCS ModelData-extracted entries; `'manual'` for hand-edited entries.
+
 ---
 
 ## Key Files Reference
@@ -220,7 +260,10 @@ python tools/dcs_data_extractor.py --datamine-path ./datamine --missile AIM_120C
 | `src/audio/rwrAudio.ts` | Web Audio API synthesizer for RWR/MAWS tones |
 | `src/ui/RWRDisplay.tsx` | RWR scope + MAWS ring + audio triggers + mute toggle |
 | `src/ui/EnvelopePlot.tsx` | Binary-search Rmax/NEZ plot, fixed `bestHitNm = loNm` |
-| `tools/dcs_data_extractor.py` | Main extraction pipeline |
+| `tools/dcs_data_extractor.py` | Main extraction pipeline (new-API ModelData missiles) |
+| `tools/old_api_parser.py` | Old-API missile parser — derives thrust/drag from fm/motor blocks or kinematics |
+| `tools/warhead_parser.py` | Parses warhead Lua files, builds expl_mass lookup |
+| `tools/process_dcs_dump.py` | Orchestrates full pipeline: missiles + warheads + aircraft + CM coefficients |
 | `tools/lua_parser.py` | Lua table parser using slpp |
 | `tools/model_data_map.py` | ModelData index → semantic name map |
 
@@ -519,7 +562,7 @@ All three components `(ax, ay, az)` are produced by `proportionalNav()` and clam
 
 ## Known Gaps & Future Work
 
-1. **18 missiles without ModelData**: Older SAMs (SA-2, SA-3, SA-6, Roland, etc.) use a custom Lua format without the standard ModelData array. Currently skipped.
+1. ~~**18 missiles without ModelData**~~: Resolved — `tools/old_api_parser.py` derives physics (thrust, drag, burn time) from old-API Lua fields (`fm.cx_coeff`, `march`/`march2` motor blocks, or kinematic estimation from `t_acc`/`v_mid`). `tools/process_dcs_dump.py` runs the full pipeline. All 14 A2A old-API missiles now have derived thrust/drag data. The `dataSource: 'old_api_estimated'` field marks these entries as derived rather than extracted from ModelData.
 
 2. **Player aircraft seeker details**: RWR detection ranges, chaff/flare effectiveness against specific player-operated seekers are in compiled C++ DLLs, not the datamine.
 
