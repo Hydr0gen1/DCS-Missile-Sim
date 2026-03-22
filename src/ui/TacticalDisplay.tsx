@@ -35,6 +35,7 @@ export default function TacticalDisplay({ mobile }: Props) {
     shooterRole,
     shooterAlt: storeShooterAlt,
     targetAlt: storeTargetAlt,
+    comparisonResults,
   } = useSimStore();
 
   // Resize canvas to fit container width on mobile
@@ -135,22 +136,35 @@ export default function TacticalDisplay({ mobile }: Props) {
       return;
     }
 
-    // Missile trails in profile (all salvo missiles)
+    // Missile trails in profile
+    const drawProfileTrail = (trail: Array<{x:number;y:number;alt:number}>, sh: {x:number;y:number}, color: string, lw: number) => {
+      if (trail.length <= 1) return;
+      ctx.beginPath();
+      let firstPt = true;
+      for (const pt of trail) {
+        const rNm = Math.hypot(pt.x - sh.x, pt.y - sh.y) * M_TO_NM;
+        const [px, py] = toCanvas(rNm, pt.alt);
+        if (firstPt) { ctx.moveTo(px, py); firstPt = false; } else { ctx.lineTo(px, py); }
+      }
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lw;
+      ctx.stroke();
+    };
+
     const profileMissiles = frame.missiles ?? [frame.missile];
-    for (let mi = 0; mi < profileMissiles.length; mi++) {
-      const msl = profileMissiles[mi];
-      if (msl.trail.length > 1) {
-        const { shooter: sh } = frame;
-        ctx.beginPath();
-        let first = true;
-        for (const pt of msl.trail) {
-          const rNm = Math.hypot(pt.x - sh.x, pt.y - sh.y) * M_TO_NM;
-          const [px, py] = toCanvas(rNm, pt.alt);
-          if (first) { ctx.moveTo(px, py); first = false; } else { ctx.lineTo(px, py); }
-        }
-        ctx.strokeStyle = mi === 0 ? 'rgba(255,165,0,0.6)' : 'rgba(255,140,60,0.4)';
-        ctx.lineWidth = mi === 0 ? 1.5 : 1;
-        ctx.stroke();
+    if (comparisonResults.length > 1) {
+      // Comparison mode: draw each missile's trail with its color
+      for (const cr of comparisonResults) {
+        const crFrame = cr.frames[Math.min(currentFrameIdx, cr.frames.length - 1)];
+        if (!crFrame) continue;
+        const msl = crFrame.missiles?.[0] ?? crFrame.missile;
+        if (msl?.trail) drawProfileTrail(msl.trail, frame.shooter, cr.color + 'aa', 1.5);
+      }
+    } else {
+      // Normal mode: all salvo missiles
+      for (let mi = 0; mi < profileMissiles.length; mi++) {
+        const msl = profileMissiles[mi];
+        drawProfileTrail(msl.trail, frame.shooter, mi === 0 ? 'rgba(255,165,0,0.6)' : 'rgba(255,140,60,0.4)', mi === 0 ? 1.5 : 1);
       }
     }
 
@@ -285,20 +299,34 @@ export default function TacticalDisplay({ mobile }: Props) {
     const { missiles, shooter, target } = frame;
     const missile = missiles[0]; // lead missile for HUD and datalink
 
-    // Draw trails for all salvo missiles
-    for (let mi = 0; mi < missiles.length; mi++) {
-      const msl = missiles[mi];
-      if (msl.trail.length > 1) {
-        ctx.beginPath();
-        const [tx0, ty0] = worldToCanvas(msl.trail[0].x, msl.trail[0].y, cx, cy, scale);
-        ctx.moveTo(tx0, ty0);
-        for (let i = 1; i < msl.trail.length; i++) {
-          const [tx1, ty1] = worldToCanvas(msl.trail[i].x, msl.trail[i].y, cx, cy, scale);
-          ctx.lineTo(tx1, ty1);
-        }
-        ctx.strokeStyle = mi === 0 ? 'rgba(255,165,0,0.5)' : 'rgba(255,140,60,0.35)';
-        ctx.lineWidth = mi === 0 ? 1.5 : 1;
-        ctx.stroke();
+    // Draw missile trails
+    const draw2DTrail = (trail: Array<{x:number;y:number;alt:number}>, color: string, lw: number) => {
+      if (trail.length <= 1) return;
+      ctx.beginPath();
+      const [tx0, ty0] = worldToCanvas(trail[0].x, trail[0].y, cx, cy, scale);
+      ctx.moveTo(tx0, ty0);
+      for (let i = 1; i < trail.length; i++) {
+        const [tx1, ty1] = worldToCanvas(trail[i].x, trail[i].y, cx, cy, scale);
+        ctx.lineTo(tx1, ty1);
+      }
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lw;
+      ctx.stroke();
+    };
+
+    if (comparisonResults.length > 1) {
+      // Comparison mode: color-coded trails
+      for (const cr of comparisonResults) {
+        const crFrame = cr.frames[Math.min(currentFrameIdx, cr.frames.length - 1)];
+        if (!crFrame) continue;
+        const msl = crFrame.missiles?.[0] ?? crFrame.missile;
+        if (msl?.trail) draw2DTrail(msl.trail, cr.color + '99', 1.5);
+      }
+    } else {
+      // Normal mode: all salvo missiles
+      for (let mi = 0; mi < missiles.length; mi++) {
+        const msl = missiles[mi];
+        draw2DTrail(msl.trail, mi === 0 ? 'rgba(255,165,0,0.5)' : 'rgba(255,140,60,0.35)', mi === 0 ? 1.5 : 1);
       }
     }
 

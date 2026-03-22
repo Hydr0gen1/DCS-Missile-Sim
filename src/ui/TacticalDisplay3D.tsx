@@ -315,6 +315,8 @@ function FlyCamera({ initialPos, lookAt, version }: {
   }, [camera, gl]);
 
   useFrame((_, delta) => {
+    // Skip input processing when canvas is hidden (display:none on ancestor) — saves CPU on mobile
+    if (!gl.domElement.offsetParent) return;
     const scale = getSpeedScale(camera, sceneCenterRef.current);
     const speed = MOVE_SPEED * scale * (keys.current['ShiftLeft'] || keys.current['ShiftRight'] ? 8 : 1);
     const fwd   = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
@@ -342,6 +344,7 @@ function SceneContent() {
     shooterAlt: storeShooterAlt,
     targetAlt: storeTargetAlt,
     simVersion,
+    comparisonResults,
   } = useSimStore();
 
   const frame = simFrames[currentFrameIdx];
@@ -413,8 +416,16 @@ function SceneContent() {
   const midX = rangeM * Math.sin((aspectAngleDeg * Math.PI) / 180) * 0.5;
   const midZ = -rangeM * Math.cos((aspectAngleDeg * Math.PI) / 180) * 0.5;
 
+  // Place the camera behind the shooter (opposite the engagement direction) with a slight
+  // lateral offset for depth perception, looking toward the engagement midpoint.
+  // "Behind" = opposite the shooter→target direction, so for head-on (aspect=0) that's
+  // positive Z (south in Three.js); for a beam shot (aspect=90°) it's negative X (west).
+  const aspectRad = (aspectAngleDeg * Math.PI) / 180;
+  const camBehindX = -Math.sin(aspectRad) * camDist * 0.4 + Math.cos(aspectRad) * camDist * 0.25;
+  const camBehindZ =  Math.cos(aspectRad) * camDist * 0.4 + Math.sin(aspectRad) * camDist * 0.25;
+
   const initialCamPos = useMemo(() =>
-    new THREE.Vector3(-camDist, camAlt, midZ * 0.2 - rangeM * 0.1),
+    new THREE.Vector3(camBehindX, camAlt, camBehindZ),
     [simVersion] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const lookAtPt = useMemo(() =>
@@ -490,8 +501,8 @@ function SceneContent() {
         );
       })}
 
-      {/* Missile trails (lead = bright orange, secondaries = darker) */}
-      {allTrails.map((pts, i) =>
+      {/* Missile trails (lead = bright orange, secondaries = darker) — normal mode only */}
+      {comparisonResults.length <= 1 && allTrails.map((pts, i) =>
         pts.length >= 2 && (
           <Line
             key={`trail-${i}`}
@@ -501,6 +512,18 @@ function SceneContent() {
           />
         )
       )}
+
+      {/* Comparison mode: one trail per missile, color-coded */}
+      {comparisonResults.length > 1 && comparisonResults.map((cr) => {
+        const crFrame = cr.frames[Math.min(currentFrameIdx, cr.frames.length - 1)];
+        if (!crFrame) return null;
+        const msl = crFrame.missiles?.[0] ?? crFrame.missile;
+        if (!msl || msl.trail.length < 2) return null;
+        const pts = msl.trail.map(({ x, y, alt }) => worldTo3D(x, y, alt));
+        return (
+          <Line key={cr.missileId} points={pts as [number,number,number][]} color={cr.color} lineWidth={2.5} />
+        );
+      })}
 
       {/* Countermeasures (flares = yellow, chaff = cyan) */}
       {frame?.countermeasures?.map((cm) => {
@@ -523,7 +546,7 @@ function SceneContent() {
 // ─── HUD overlay ─────────────────────────────────────────────────────────────
 
 function HUDOverlay({ mobile }: { mobile?: boolean }) {
-  const { simFrames, currentFrameIdx, simStatus, simResult } = useSimStore();
+  const { simFrames, currentFrameIdx, simStatus, simResult, comparisonResults } = useSimStore();
   const frame = simFrames[currentFrameIdx];
 
   const isDone = simStatus === 'hit' || simStatus === 'miss';
@@ -588,6 +611,16 @@ function HUDOverlay({ mobile }: { mobile?: boolean }) {
           {!simResult.hit && simResult.missDistance < 200 && (
             <div style={hud.row}><span style={hud.dim}>CPA </span>{simResult.missDistance.toFixed(1)}<span style={hud.unit}>m</span></div>
           )}
+        </>
+      )}
+      {comparisonResults.length > 1 && (
+        <>
+          <div style={hud.sep} />
+          {comparisonResults.map((cr) => (
+            <div key={cr.missileId} style={{ fontSize: 9, color: cr.color, lineHeight: 1.6 }}>
+              ● {cr.missileName} — {cr.result.hit ? 'HIT' : 'MISS'} Pk{(cr.result.pk * 100).toFixed(0)}%
+            </div>
+          ))}
         </>
       )}
       <div style={hud.sep} />

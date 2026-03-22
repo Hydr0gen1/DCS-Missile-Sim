@@ -3,7 +3,7 @@ import { useSimStore } from '../store/simStore';
 import type { ComparisonEntry } from '../store/simStore';
 import { T } from './theme';
 
-type SortKey = keyof Pick<ComparisonEntry, 'pk' | 'timeOfFlight' | 'terminalSpeedMach' | 'missDistance' | 'fPoleNm' | 'aPoleNm' | 'rangeNm' | 'aspectAngleDeg'>;
+type SortKey = keyof Pick<ComparisonEntry, 'pk' | 'timeOfFlight' | 'terminalSpeedMach' | 'maxAltitudeFt' | 'missDistance' | 'fPoleNm' | 'aPoleNm' | 'rangeNm' | 'aspectAngleDeg'>;
 
 export default function ComparisonPanel() {
   const { simResult, comparisonEntries, addComparisonEntry, removeComparisonEntry, clearComparisonEntries,
@@ -29,6 +29,7 @@ export default function ComparisonPanel() {
       hit: simResult.hit,
       timeOfFlight: simResult.timeOfFlight,
       terminalSpeedMach: simResult.terminalSpeedMach,
+      maxAltitudeFt: simResult.maxAltitudeFt,
       missDistance: simResult.missDistance,
       fPoleNm: simResult.fPoleNm,
       aPoleNm: simResult.aPoleNm,
@@ -49,7 +50,7 @@ export default function ComparisonPanel() {
 
   function handleExportCsv() {
     if (comparisonEntries.length === 0) return;
-    const headers = ['Label', 'Missile', 'Maneuver', 'Range(nm)', 'Aspect(°)', 'Tgt Alt(ft)', 'Tgt Spd(kt)', 'Pk(%)', 'Hit', 'TOF(s)', 'Terminal(M)', 'Miss(m)', 'F-Pole(nm)', 'A-Pole(nm)', 'Verdict'];
+    const headers = ['Label', 'Missile', 'Maneuver', 'Range(nm)', 'Aspect(°)', 'Tgt Alt(ft)', 'Tgt Spd(kt)', 'Pk(%)', 'Hit', 'TOF(s)', 'Terminal(M)', 'MaxAlt(ft)', 'Miss(m)', 'F-Pole(nm)', 'A-Pole(nm)', 'Verdict'];
     const rows = comparisonEntries.map((e) => [
       `"${e.label}"`,
       `"${e.missileName}"`,
@@ -62,6 +63,7 @@ export default function ComparisonPanel() {
       e.hit ? 'Y' : 'N',
       e.timeOfFlight.toFixed(1),
       e.terminalSpeedMach.toFixed(2),
+      Math.round(e.maxAltitudeFt),
       e.missDistance.toFixed(0),
       e.fPoleNm.toFixed(1),
       e.aPoleNm.toFixed(1),
@@ -142,6 +144,7 @@ export default function ComparisonPanel() {
                 <th style={styles.th}>Hit</th>
                 <SortBtn col="timeOfFlight" label="TOF" />
                 <SortBtn col="terminalSpeedMach" label="M-term" />
+                <SortBtn col="maxAltitudeFt" label="MaxAlt" />
                 <SortBtn col="missDistance" label="Miss" />
                 <SortBtn col="fPoleNm" label="F-pole" />
                 <SortBtn col="aPoleNm" label="A-pole" />
@@ -160,6 +163,7 @@ export default function ComparisonPanel() {
                   <td style={{ ...styles.tdNum, color: e.hit ? T.success : T.danger }}>{e.hit ? 'Y' : 'N'}</td>
                   <td style={styles.tdNum}>{e.timeOfFlight.toFixed(1)}s</td>
                   <td style={styles.tdNum}>M{e.terminalSpeedMach.toFixed(2)}</td>
+                  <td style={styles.tdNum}>{Math.round(e.maxAltitudeFt / 1000)}k ft</td>
                   <td style={styles.tdNum}>{e.hit ? '—' : `${e.missDistance.toFixed(0)}m`}</td>
                   <td style={styles.tdNum}>{e.fPoleNm.toFixed(1)}</td>
                   <td style={styles.tdNum}>{e.aPoleNm.toFixed(1)}</td>

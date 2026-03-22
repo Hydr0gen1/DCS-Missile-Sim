@@ -90,8 +90,10 @@ function MobileLayout() {
           <SetupPanel mobile />
         )}
 
-        {appMode === 'tactical' && mobileTab === 'view' && (
-          <>
+        {/* VIEW tab — always mounted to preserve 3D camera state across tab switches.
+            display:none hides it without destroying the Three.js WebGL context or refs. */}
+        {appMode === 'tactical' && (
+          <div style={{ display: mobileTab === 'view' ? 'block' : 'none' }}>
             <div style={{ display: 'flex', gap: 4, padding: '4px 8px', flexShrink: 0 }}>
               <button
                 style={{ ...mobileStyles.toggleBtn, ...(viewMode === '2d' ? mobileStyles.toggleBtnActive : {}) }}
@@ -107,7 +109,7 @@ function MobileLayout() {
               : <TacticalDisplay3D mobile />
             }
             <RWRDisplay mobile />
-          </>
+          </div>
         )}
 
         {appMode === 'tactical' && mobileTab === 'data' && (

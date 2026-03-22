@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { T } from './theme';
-import { useSimStore } from '../store/simStore';
+import { useSimStore, COMPARISON_COLORS } from '../store/simStore';
+import type { ComparisonResult } from '../store/simStore';
 import { validateScenario, runSimulation } from '../physics/engagement';
 import { KTS_TO_MS } from '../physics/atmosphere';
 import type { ScenarioConfig } from '../physics/engagement';
@@ -23,10 +24,11 @@ export default function PlaybackBar({ mobile }: Props) {
     targetHasMaws, targetReactOnDetect,
     rangeNm, aspectAngleDeg, selectedMissileId,
     shooterManeuver, salvoCount, salvoInterval_s, lockTime_s, manualLoftAngle_deg, salvoMissileIds,
+    comparisonMode, comparisonMissileIds,
     simFrames, currentFrameIdx, simStatus, simResult,
     playbackSpeed, isPlaying,
     setSimFrames, setSimError, setCurrentFrameIdx, setIsPlaying,
-    setPlaybackSpeed, resetSim, setMobileTab,
+    setPlaybackSpeed, resetSim, setMobileTab, setComparisonResults,
   } = store;
 
   const rafRef = useRef<number | null>(null);
@@ -66,17 +68,13 @@ export default function PlaybackBar({ mobile }: Props) {
     };
   }, [isPlaying, playbackSpeed, currentFrameIdx, simFrames.length]);
 
-  function handleLaunch() {
-    stopAllLoops();
-    resetSim();
+  function buildBaseCfg(): ScenarioConfig | null {
     const rawMissile = missiles.find((m) => m.id === selectedMissileId);
-    if (!rawMissile) return;
+    if (!rawMissile) return null;
     const missile = fillMissingFields(rawMissile);
-
     const shooterAircraft = aircraft.find((a) => a.id === shooterAircraftId);
     const targetAircraft = aircraft[targetAircraftId];
-
-    const cfg: ScenarioConfig = {
+    return {
       shooterRole,
       shooterType: shooterAircraftId,
       shooterAlt,
@@ -108,6 +106,64 @@ export default function PlaybackBar({ mobile }: Props) {
         return raw ? fillMissingFields(raw) : null;
       }),
     };
+  }
+
+  function handleLaunch() {
+    stopAllLoops();
+    // Don't call resetSim() — setSimFrames already clears all state and increments simVersion
+    // in a single atomic update. Calling resetSim() first caused a double simVersion bump and
+    // an intermediate empty-state render that confused the camera reset and playback.
+
+    if (comparisonMode && comparisonMissileIds.length > 0) {
+      // Run one simulation per comparison missile, all with the same scenario
+      const baseCfg = buildBaseCfg();
+      if (!baseCfg) return;
+      try {
+        const results: ComparisonResult[] = [];
+        let firstMaxRangeM = 0, firstMinRangeM = 0, firstNezM = 0, firstSX = 0, firstSY = 0;
+        for (let i = 0; i < comparisonMissileIds.length; i++) {
+          const mslId = comparisonMissileIds[i];
+          const rawMsl = missiles.find((m) => m.id === mslId);
+          if (!rawMsl) continue;
+          const msl = fillMissingFields(rawMsl);
+          const mslCfg: ScenarioConfig = { ...baseCfg, missile: msl, salvoCount: 1, salvoMissiles: [null, null, null] };
+          const err = validateScenario(mslCfg);
+          if (err) { setSimError(`${rawMsl.name}: ${err}`); return; }
+          const sim = runSimulation(mslCfg);
+          if (i === 0) {
+            firstMaxRangeM = sim.maxRangeM;
+            firstMinRangeM = sim.minRangeM;
+            firstNezM = sim.nezM;
+            firstSX = sim.shooterStartX;
+            firstSY = sim.shooterStartY;
+          }
+          results.push({
+            missileId: mslId,
+            missileName: rawMsl.name,
+            color: COMPARISON_COLORS[i % COMPARISON_COLORS.length],
+            frames: sim.frames,
+            result: sim.result,
+          });
+        }
+        setComparisonResults(results);
+        // Use the longest simulation for the primary playback timeline
+        const longest = results.reduce((a, b) => a.frames.length > b.frames.length ? a : b);
+        setSimFrames(longest.frames, longest.result, firstMaxRangeM, firstMinRangeM, firstNezM, firstSX, firstSY);
+        setCurrentFrameIdx(0);
+        setIsPlaying(true);
+        if (mobile) setMobileTab('view');
+        lastTimeRef.current = performance.now();
+        accumRef.current = 0;
+      } catch (e) {
+        setSimError(String(e));
+      }
+      return;
+    }
+
+    // Normal (single) launch
+    const cfg = buildBaseCfg();
+    if (!cfg) return;
+    setComparisonResults([]);
 
     const err = validateScenario(cfg);
     if (err) {
