@@ -142,7 +142,8 @@
     "radar": {
       "maxRange_nm": 90.2,
       "referenceRCS_m2": 5.0,
-      "gimbalLimit_deg": 0.0,
+      "gimbalLimit_deg": 65.0,
+      "lookDownRange_nm": 72,
       "scanTime_s": 5.0,
       "twsAccuracy_m": 200,
       "sttAccuracy_m": 20,
