@@ -235,7 +235,9 @@ function computeLoftAltitude(
   isGroundLaunched: boolean,
   isBurning: boolean,
   burnTimeFrac: number,
+  isInLoftClimb: boolean,
 ): number {
+  // Ground-launched SAMs: steep initial climb, then track target
   if (isGroundLaunched) {
     const altErrLoft = tzActual - mzM;
     if (isBurning && burnTimeFrac < 0.2 && altErrLoft > 0) {
@@ -243,16 +245,28 @@ function computeLoftAltitude(
     }
     return isSeduced ? mzM : tzActual;
   }
-  // Air-launched loft (range-gated)
-  const loftSin = Math.sin((loftAngle * Math.PI) / 180);
-  if (loftAngle > 0 && horizDist > effectiveDescentM) {
-    if (horizDist >= effectiveTriggerM) {
-      return tzActual + loftSin * horizDist;
-    }
-    const blend = (horizDist - effectiveDescentM) / Math.max(1, effectiveTriggerM - effectiveDescentM);
-    return tzActual + loftSin * horizDist * blend;
-  }
-  return isSeduced ? mzM : tzActual;
+
+  // During direct-pitch loft climb: the pitch command handles guidance; PN is not active.
+  // Return tzActual as a no-op so PN (which is bypassed) doesn't accumulate wrong state.
+  if (isInLoftClimb) return tzActual;
+
+  // Seduced: hold current altitude (no guidance)
+  if (isSeduced) return mzM;
+
+  // No loft profile → always steer to real target altitude
+  if (loftAngle <= 0) return tzActual;
+
+  // Terminal zone: real target altitude — PN dives to intercept
+  if (horizDist <= effectiveDescentM) return tzActual;
+
+  // Post-loft glide zone: linearly descend from missile's current altitude
+  // to target altitude, reaching it at the descent range boundary.
+  // This replaces the old "tzActual + loftSin * horizDist" formula which
+  // returned 180,000+ ft virtual targets, causing PN to command a climb
+  // throughout the entire coast phase.
+  const glideSpan = Math.max(1, effectiveTriggerM * 2 - effectiveDescentM);
+  const gp = Math.max(0, Math.min(1, 1.0 - (horizDist - effectiveDescentM) / glideSpan));
+  return mzM + (tzActual - mzM) * gp;
 }
 
 /** Run full engagement simulation, returns all frames */
@@ -807,10 +821,15 @@ export function runSimulation(cfg: ScenarioConfig): {
     const horizDistE = Math.hypot(guidanceTargetX - missileState.x, guidanceTargetY - missileState.y);
     const effectiveTriggerM = loftTriggerM ?? maxRangeM * 0.5;
     const effectiveDescentM = loftDescentM ?? maxRangeM * 0.25;
+
+    // Must be computed before computeLoftAltitude (it's also used by the PN block below).
+    const isLoftClimb = !isGroundLaunched && loftAngle > 0 && burning && horizDistE > effectiveDescentM;
+
     const tzGuide = computeLoftAltitude(
       mzM, tzActual, horizDistE,
       loftAngle, effectiveTriggerM, effectiveDescentM,
       seduced, isGroundLaunched, burning, burnTime > 0 ? time / burnTime : 1,
+      isLoftClimb,
     );
 
     // ── Proportional nav — computed always for range/closingVelocity display ─
@@ -832,11 +851,6 @@ export function runSimulation(cfg: ScenarioConfig): {
     const { range, closingVelocity } = seduced
       ? { range: Math.sqrt(dxSk * dxSk + dySk * dySk), closingVelocity: 0 }
       : guidOut;
-
-    // Loft climb: motor burning, loft profile exists, haven't reached descent zone.
-    // Use direct autopilot pitch command — PN can't generate steep pitch-up from a
-    // horizontal velocity vector; direct command gets the missile into thin air fast.
-    const isLoftClimb = !isGroundLaunched && loftAngle > 0 && burning && horizDistE > effectiveDescentM;
 
     let ax: number, ay: number, az: number, limited: boolean;
     if (time < controlDelay) {
@@ -1201,10 +1215,15 @@ export function runSimulation(cfg: ScenarioConfig): {
         const sGuidX = slot.seduced ? slot.lastKnownX : newTarget.x;
         const sGuidY = slot.seduced ? slot.lastKnownY : newTarget.y;
         const sHorizDist = Math.hypot(sGuidX - slot.state.x, sGuidY - slot.state.y);
+
+        // Must be computed before computeLoftAltitude (also used by guidance block below).
+        const sIsLoftClimb = !isGroundLaunched && sLoftAngle > 0 && sBurning && sHorizDist > sEffectiveDescentM;
+
         const sTzGuide = computeLoftAltitude(
           sMz, sTz, sHorizDist,
           sLoftAngle, sEffectiveTriggerM, sEffectiveDescentM,
           slot.seduced, isGroundLaunched, sFlight < sBurnTime, sBurnTime > 0 ? sFlight / sBurnTime : 1,
+          sIsLoftClimb,
         );
 
         const sGuidOut = proportionalNav({
@@ -1216,8 +1235,6 @@ export function runSimulation(cfg: ScenarioConfig): {
           tvz: slot.seduced ? 0 : (newTarget.vzMs ?? 0),
           navConst: getPNGain(sRange, sPnSchedule, sNavN),
         });
-
-        const sIsLoftClimb = !isGroundLaunched && sLoftAngle > 0 && sBurning && sHorizDist > sEffectiveDescentM;
 
         let sAx: number, sAy: number, sAz: number;
         if (sFlight < sControlDelay) {
