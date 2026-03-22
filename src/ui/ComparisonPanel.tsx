@@ -163,7 +163,7 @@ export default function ComparisonPanel() {
                   <td style={styles.tdNum}>{e.hit ? '—' : `${e.missDistance.toFixed(0)}m`}</td>
                   <td style={styles.tdNum}>{e.fPoleNm.toFixed(1)}</td>
                   <td style={styles.tdNum}>{e.aPoleNm.toFixed(1)}</td>
-                  <td style={{ ...styles.td, fontSize: 9, color: verdictColor(e.pk) }}>{e.verdict}</td>
+                  <td style={{ ...styles.td, fontSize: 9, color: verdictColor(e.pk, e.verdict) }}>{e.verdict}</td>
                   <td style={styles.td}>
                     <button
                       style={styles.delBtn}
@@ -187,7 +187,9 @@ function pkColor(pk: number): string {
   return T.danger;
 }
 
-function verdictColor(pk: number): string {
+function verdictColor(pk: number, verdict?: string): string {
+  if (verdict?.startsWith('Decoyed')) return '#ff8800';
+  if (verdict?.startsWith('No launch')) return T.textDim;
   if (pk >= 0.8) return T.success;
   if (pk >= 0.5) return T.warning;
   return T.danger;

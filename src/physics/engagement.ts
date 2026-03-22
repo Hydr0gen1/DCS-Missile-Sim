@@ -407,22 +407,13 @@ export function runSimulation(cfg: ScenarioConfig): {
   // MAWS can detect motor plumes within ~6nm (11112m). Real AN/AAR-56/57 spec.
   const MAWS_DETECT_RANGE_M = 11112;
 
-  // Threat detection state (used when reactOnDetect=true)
-  // SARH: FCR lock is immediately detectable on RWR → detected at launch
-  // ARH: detected when seeker goes active (ARH seeker pings the target)
-  // IR+datalink: shooter radar tracks target mid-course → detected at launch (same as SARH)
-  // IR without datalink: detected by MAWS only, else never
-  let threatDetectedByTarget = m.type === 'SARH' || (m.type === 'IR' && m.hasDatalink === true);
+  // threatDetectedByTarget: whether the target's sensors have detected the threat.
+  // Used only for MAWS gating (IR + MAWS case). All other cases are handled directly
+  // in the maneuver gate block below.
+  let threatDetectedByTarget = false;
 
-  // targetShouldManeuver: decoupled from seeker-active state.
-  // - SARH/ARH without reactOnDetect: pilot sees STT/TWS lock on RWR → maneuver starts at launch.
-  // - ARH with reactOnDetect: only once ARH seeker goes active (pitbull).
-  // - IR without MAWS: pilot can't detect the threat — but if a maneuver is set they're pre-planned.
-  // - IR with MAWS + reactOnDetect: only once MAWS detects the plume.
-  const maneuverIsPrePlanned = !reactOnDetect;
-  let targetShouldManeuver = maneuverIsPrePlanned && m.type !== 'IR'
-    ? true  // SARH/ARH: pilot sees radar lock on RWR immediately at launch
-    : false; // IR or react-on-detect: wait for detection event
+  // targetShouldManeuver: starts false; gate block sets it true when detection conditions met.
+  let targetShouldManeuver = false;
 
   const maxTime = 300;
   let time = 0;
@@ -618,12 +609,9 @@ export function runSimulation(cfg: ScenarioConfig): {
       detectionTimeline.push({ time, type: 'stt_lock', description: 'STT lock achieved' });
     }
 
-    // --- Threat detection (for react-on-detect feature) ---
+    // --- Threat detection (MAWS only — used for IR+MAWS gating) ---
     if (!threatDetectedByTarget) {
-      if (m.type === 'ARH' && missileState.active) {
-        // ARH seeker pings target → RWR spike
-        threatDetectedByTarget = true;
-      } else if (m.type === 'IR' && hasMaws && missileState.motorBurning && rangeSk <= MAWS_DETECT_RANGE_M) {
+      if (m.type === 'IR' && hasMaws && missileState.motorBurning && rangeSk <= MAWS_DETECT_RANGE_M) {
         // MAWS detects UV/IR motor plume within 6nm — coasting missiles have no plume
         threatDetectedByTarget = true;
       }
@@ -631,18 +619,36 @@ export function runSimulation(cfg: ScenarioConfig): {
 
     // --- Update maneuver gate based on detection events ---
     if (!targetShouldManeuver) {
-      if (reactOnDetect) {
-        // Only maneuver once the target has detected the specific threat
-        if (m.type === 'IR') {
-          // IR: MAWS detection gates maneuver (already latched in threatDetectedByTarget)
-          targetShouldManeuver = hasMaws && threatDetectedByTarget;
-        } else {
-          // ARH/SARH: seeker active = RWR active spike → maneuver
-          targetShouldManeuver = missileState.active;
-        }
-      } else if (m.type === 'IR') {
-        // IR without reactOnDetect: maneuver immediately (pre-planned defensive posture)
+      if (!reactOnDetect) {
+        // Pre-planned maneuver: start immediately regardless of detection (all types)
         targetShouldManeuver = true;
+      } else {
+        // React-on-detect: only maneuver once target's sensors detect the threat
+        switch (m.type) {
+          case 'SARH':
+            // SARH: FCR illumination is immediately detectable on RWR → maneuver at launch
+            targetShouldManeuver = true;
+            break;
+          case 'ARH':
+            // ARH: RWR detects the shooter's STT/TWS strobe during mid-course.
+            // Pilot reacts to the lock, not the pitbull. Use sttLocked as the gate.
+            targetShouldManeuver = sttLocked || missileState.active;
+            break;
+          case 'IR':
+            if (m.hasDatalink) {
+              // IR+datalink: shooter radar tracks target mid-course → RWR detects at launch
+              targetShouldManeuver = true;
+            } else if (hasMaws) {
+              // Plain IR + MAWS: detect motor plume (latched in threatDetectedByTarget).
+              // Fallback to visual at 2nm if motor burned out before MAWS range.
+              targetShouldManeuver = threatDetectedByTarget || rangeSk <= 3704;
+            } else {
+              // Plain IR + no MAWS: no electronic warning. Pilot may see smoke trail visually.
+              const visualDetectRangeM = 3704; // 2nm — visual acquisition of smoke trail
+              targetShouldManeuver = rangeSk <= visualDetectRangeM;
+            }
+            break;
+        }
       }
     }
 
@@ -652,7 +658,7 @@ export function runSimulation(cfg: ScenarioConfig): {
       targetState, DT,
       missileState.x, missileState.y,
       targetShouldManeuver,
-      !reactOnDetect || threatDetectedByTarget,
+      true, // threatDetected: always true once targetShouldManeuver fires (gate already handles detection)
       cfg.targetAircraftData,
       shooterState,
     );
@@ -1657,8 +1663,10 @@ function buildVerdict(pk: number, hit: boolean, missReason: string): string {
   if (!hit) {
     if (missReason === 'insufficient energy') return 'Miss — insufficient energy';
     if (missReason === 'insufficient maneuverability') return 'Miss — defeated by maneuver';
-    if (missReason === 'defeated by flares') return 'Miss — seduced by flares';
-    if (missReason === 'defeated by chaff') return 'Miss — seduced by chaff';
+    if (missReason === 'defeated by flares') return 'Decoyed — seduced by flares';
+    if (missReason === 'defeated by chaff') return 'Decoyed — seduced by chaff';
+    if (missReason === 'seeker cannot acquire') return 'No launch — beyond seeker range';
+    if (missReason === 'ground strike') return 'Miss — ground strike';
     if (missReason === 'timeout') return 'Miss — engagement timeout';
     return `Miss — ${missReason || 'unknown'}`;
   }

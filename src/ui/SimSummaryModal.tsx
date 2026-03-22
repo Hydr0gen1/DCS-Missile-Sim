@@ -17,7 +17,11 @@ export default function SimSummaryModal({ onClose }: Props) {
   const verdictIsKill = r.pk >= 0.85 && r.hit;
   const verdictIsProbable = r.pk >= 0.65 && r.hit;
   const verdictIsMarginal = r.pk >= 0.35 && r.hit;
-  const verdictColor = verdictIsKill
+  const verdictColor = r.verdict?.startsWith('Decoyed')
+    ? '#ff8800'
+    : r.verdict?.startsWith('No launch')
+    ? '#888888'
+    : verdictIsKill
     ? '#00ff80'
     : verdictIsProbable
     ? '#88ff44'
