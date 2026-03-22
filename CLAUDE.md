@@ -579,6 +579,59 @@ All three components `(ax, ay, az)` are produced by `proportionalNav()` and clam
 - **Plan view** (default): top-down, X = east, Y = north — the classic BVR picture.
 - **Profile view**: range-from-shooter (X) vs altitude (Y) — shows loft trajectory, altitude differentials, and SAM climb profiles.
 
+### 3D Camera Controls (FlyCamera)
+
+`FlyCamera` in `TacticalDisplay3D.tsx` supports both desktop and touch (mobile) input.
+
+**Desktop:**
+- Hold LMB + drag → orbit/rotate
+- Scroll wheel → zoom (dolly forward/back)
+- W/A/S/D or Arrow keys → fly forward/back/strafe
+- Q/E or Page Down/Up → fly down/up
+- Shift → 8× speed multiplier
+
+**Mobile touch gestures:**
+- **1-finger drag** → orbit/rotate (same as LMB+drag; sensitivity ×1.5 vs mouse)
+- **2-finger pinch** → zoom in/out (camera moves along its forward vector proportional to pinch delta × `MOVE_SPEED × 0.05`)
+- **2-finger pan (drag without pinching)** → strafe camera left/right/up/down (`MOVE_SPEED × 0.03` per pixel)
+- Transitioning from 2 fingers to 1 restarts single-finger rotation tracking cleanly
+
+Touch handlers use `{ passive: false }` and call `e.preventDefault()` to block browser scroll/zoom. The Canvas container div has `touchAction: 'none'` for the same reason.
+
+**State refs:** `lastTouch`, `lastPinchDist`, `lastTwoFingerCenter` — all `useRef`, reset on `touchend` to zero active touches.
+
+### Camera Auto-Reset (simVersion)
+
+`simStore.simVersion: number` is a counter that increments on every `setSimFrames` (launch) and `resetSim`. `SceneContent` reads it and passes it to `FlyCamera` as the `version` prop.
+
+`FlyCamera` tracks `lastVersion` in a ref. When `version !== lastVersion.current` it:
+1. Copies `initialPos` to `camera.position`
+2. Recomputes `yaw` and `pitch` from `lookAt − initialPos`
+3. Applies `camera.rotation.order = 'YXZ'`
+
+This replaces the old `initialized.current` boolean that blocked all subsequent resets.
+
+**Camera position heuristics** (computed each render in `SceneContent`, captured by `useMemo([simVersion])`):
+
+```typescript
+const camDist = Math.max(rangeM * 0.55, 3000);          // min 3 km
+const camAlt  = Math.max(
+    midAltM + rangeM * 0.15,   // proportional to range
+    maxAltM * 0.8,              // above both aircraft
+    5000,                        // absolute floor 5 km
+);
+// Look-at accounts for aspect angle so beam shots frame correctly:
+const midX = rangeM * sin(aspectRad) * 0.5;
+const midZ = -rangeM * cos(aspectRad) * 0.5;
+```
+
+| Scenario | Range | camDist | camAlt | Effect |
+|---|---|---|---|---|
+| BVR 30 nm | 55,560 m | 30,558 m | 15,000 m | Wide view of full arc |
+| BVR 10 nm | 18,520 m | 10,186 m | 8,000 m | Medium view |
+| Dogfight 2 nm | 3,704 m | 3,000 m (min) | 5,000 m (min) | Close, aircraft visible |
+| SAM 10 nm | 18,520 m | 10,186 m | 10,000 m | High for climb profile |
+
 ### Remaining gaps
 
 - **Aircraft `vz` for non-altitude-changing maneuvers**: break/crank set `vzMs = 0`. A full energy model (System 3 from the roadmap) would compute vz from pitch + turn load.

@@ -143,27 +143,36 @@ function GroundGrid({ rangeM }: { rangeM: number }) {
 const MOVE_SPEED = 400; // m/s base move speed
 const LOOK_SENSITIVITY = 0.002;
 
-function FlyCamera({ initialPos, lookAt }: { initialPos: THREE.Vector3; lookAt: THREE.Vector3 }) {
+function FlyCamera({ initialPos, lookAt, version }: {
+  initialPos: THREE.Vector3;
+  lookAt: THREE.Vector3;
+  version: number;
+}) {
   const { camera, gl } = useThree();
   const keys = useRef<Record<string, boolean>>({});
   const isDragging = useRef(false);
   const yaw = useRef(0);
   const pitch = useRef(0);
-  const initialized = useRef(false);
+  const lastVersion = useRef(-1);
 
-  // Set initial camera position + orientation once
+  // Touch state
+  const lastTouch = useRef<{ x: number; y: number } | null>(null);
+  const lastPinchDist = useRef<number | null>(null);
+  const lastTwoFingerCenter = useRef<{ x: number; y: number } | null>(null);
+
+  // Reset camera position + orientation whenever sim version changes
   useEffect(() => {
-    if (initialized.current) return;
-    initialized.current = true;
+    if (version === lastVersion.current) return;
+    lastVersion.current = version;
+
     camera.position.copy(initialPos);
-    // Compute initial yaw/pitch from lookAt
     const dir = new THREE.Vector3().subVectors(lookAt, initialPos).normalize();
     yaw.current = Math.atan2(dir.x, -dir.z);
     pitch.current = Math.asin(Math.max(-1, Math.min(1, dir.y)));
     camera.rotation.order = 'YXZ';
     camera.rotation.y = yaw.current;
     camera.rotation.x = pitch.current;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [version, initialPos, lookAt, camera]);
 
   useEffect(() => {
     const canvas = gl.domElement;
@@ -191,12 +200,91 @@ function FlyCamera({ initialPos, lookAt }: { initialPos: THREE.Vector3; lookAt: 
       camera.position.addScaledVector(fwd, -e.deltaY * 20);
     };
 
+    // ── Touch handlers ──────────────────────────────────────────────────────
+    const onTouchStart = (e: TouchEvent) => {
+      e.preventDefault();
+      if (e.touches.length === 1) {
+        lastTouch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        lastPinchDist.current = null;
+        lastTwoFingerCenter.current = null;
+      } else if (e.touches.length === 2) {
+        lastTouch.current = null;
+        const dx = e.touches[1].clientX - e.touches[0].clientX;
+        const dy = e.touches[1].clientY - e.touches[0].clientY;
+        lastPinchDist.current = Math.sqrt(dx * dx + dy * dy);
+        lastTwoFingerCenter.current = {
+          x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+          y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+        };
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      if (e.touches.length === 1 && lastTouch.current) {
+        // Single finger: orbit/rotate
+        const dx = e.touches[0].clientX - lastTouch.current.x;
+        const dy = e.touches[0].clientY - lastTouch.current.y;
+        yaw.current   -= dx * LOOK_SENSITIVITY * 1.5;
+        pitch.current -= dy * LOOK_SENSITIVITY * 1.5;
+        pitch.current = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, pitch.current));
+        camera.rotation.order = 'YXZ';
+        camera.rotation.y = yaw.current;
+        camera.rotation.x = pitch.current;
+        lastTouch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      } else if (e.touches.length === 2) {
+        const dx = e.touches[1].clientX - e.touches[0].clientX;
+        const dy = e.touches[1].clientY - e.touches[0].clientY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const center = {
+          x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+          y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+        };
+
+        if (lastPinchDist.current !== null) {
+          // Pinch: zoom forward/back
+          const pinchDelta = dist - lastPinchDist.current;
+          const fwd = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
+          camera.position.addScaledVector(fwd, pinchDelta * MOVE_SPEED * 0.05);
+        }
+
+        if (lastTwoFingerCenter.current !== null) {
+          // Two-finger pan: strafe
+          const panDx = center.x - lastTwoFingerCenter.current.x;
+          const panDy = center.y - lastTwoFingerCenter.current.y;
+          const right = new THREE.Vector3(1, 0, 0).applyEuler(camera.rotation);
+          const up = new THREE.Vector3(0, 1, 0);
+          camera.position.addScaledVector(right, -panDx * MOVE_SPEED * 0.03);
+          camera.position.addScaledVector(up,     panDy * MOVE_SPEED * 0.03);
+        }
+
+        lastPinchDist.current = dist;
+        lastTwoFingerCenter.current = center;
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length === 0) {
+        lastTouch.current = null;
+        lastPinchDist.current = null;
+        lastTwoFingerCenter.current = null;
+      } else if (e.touches.length === 1) {
+        // Went from two fingers to one: restart single-finger rotation
+        lastTouch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        lastPinchDist.current = null;
+        lastTwoFingerCenter.current = null;
+      }
+    };
+
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     canvas.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mouseup', onMouseUp);
     canvas.addEventListener('mousemove', onMouseMove);
     canvas.addEventListener('wheel', onWheel, { passive: true });
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove',  onTouchMove,  { passive: false });
+    canvas.addEventListener('touchend',   onTouchEnd);
 
     return () => {
       window.removeEventListener('keydown', onKeyDown);
@@ -205,6 +293,9 @@ function FlyCamera({ initialPos, lookAt }: { initialPos: THREE.Vector3; lookAt: 
       window.removeEventListener('mouseup', onMouseUp);
       canvas.removeEventListener('mousemove', onMouseMove);
       canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('touchstart', onTouchStart);
+      canvas.removeEventListener('touchmove',  onTouchMove);
+      canvas.removeEventListener('touchend',   onTouchEnd);
     };
   }, [camera, gl]);
 
@@ -234,6 +325,7 @@ function SceneContent() {
     rangeNm, aspectAngleDeg, shooterRole,
     shooterAlt: storeShooterAlt,
     targetAlt: storeTargetAlt,
+    simVersion,
   } = useSimStore();
 
   const frame = simFrames[currentFrameIdx];
@@ -290,16 +382,28 @@ function SceneContent() {
   const targetPole:  [number, number, number][] = [[targetPos[0],  0, targetPos[2]],  targetPos];
   const missilePole: [number, number, number][] = [[missilePos[0], 0, missilePos[2]], missilePos];
 
-  // Initial camera: side-on view showing full engagement
+  // Initial camera: side-on view scaled to the engagement
   const rangeM = rangeNm * NM_TO_M;
-  const midAltM = targetAlt * FT_TO_M * 0.5;
+  const maxAltM = Math.max(shooterAlt, targetAlt) * FT_TO_M;
+  const midAltM = maxAltM * 0.5;
+
+  // Camera distance and altitude scale with range and aircraft altitudes.
+  // Minimum 3 km out and 5 km up so dogfight scenarios still frame correctly.
+  const camDist = Math.max(rangeM * 0.55, 3000);
+  const camAlt  = Math.max(midAltM + rangeM * 0.15, maxAltM * 0.8, 5000);
+
+  // Look at the midpoint between shooter (origin) and target start position,
+  // accounting for aspect angle so beam shots frame correctly.
+  const midX = rangeM * Math.sin((aspectAngleDeg * Math.PI) / 180) * 0.5;
+  const midZ = -rangeM * Math.cos((aspectAngleDeg * Math.PI) / 180) * 0.5;
+
   const initialCamPos = useMemo(() =>
-    new THREE.Vector3(-rangeM * 0.55, Math.max(midAltM + 8000, 15000), -rangeM * 0.1),
-    [] // eslint-disable-line react-hooks/exhaustive-deps
+    new THREE.Vector3(-camDist, camAlt, midZ * 0.2 - rangeM * 0.1),
+    [simVersion] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const lookAtPt = useMemo(() =>
-    new THREE.Vector3(0, midAltM, -rangeM * 0.5),
-    [] // eslint-disable-line react-hooks/exhaustive-deps
+    new THREE.Vector3(midX, midAltM, midZ),
+    [simVersion] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   return (
@@ -387,7 +491,7 @@ function SceneContent() {
       })}
 
       {/* Free camera */}
-      <FlyCamera initialPos={initialCamPos} lookAt={lookAtPt} />
+      <FlyCamera initialPos={initialCamPos} lookAt={lookAtPt} version={simVersion} />
     </>
   );
 }
@@ -432,7 +536,7 @@ function HUDOverlay() {
       )}
       <div style={hud.sep} />
       <div style={{ color: '#223322', fontSize: 8, lineHeight: 1.8 }}>
-        LMB+DRAG LOOK<br />WASD MOVE<br />QE UP/DN<br />SHIFT FAST<br />SCROLL ZOOM
+        LMB+DRAG LOOK<br />WASD MOVE<br />QE UP/DN<br />SHIFT FAST<br />SCROLL ZOOM<br />1-FINGER ROTATE<br />2-FINGER ZOOM/PAN
       </div>
     </div>
   );
@@ -501,6 +605,7 @@ export default function TacticalDisplay3D({ mobile }: TacticalDisplay3DProps) {
       height: mobile ? undefined : 700,
       aspectRatio: mobile ? '1' : undefined,
       flexShrink: mobile ? undefined : 0,
+      touchAction: 'none', // prevent browser scroll/zoom stealing touch events
     }}>
       <Canvas
         style={{ background: 'linear-gradient(to bottom, #040810 0%, #060d06 60%, #080c08 100%)' }}
