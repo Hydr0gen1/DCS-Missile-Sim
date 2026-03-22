@@ -416,8 +416,16 @@ function SceneContent() {
   const midX = rangeM * Math.sin((aspectAngleDeg * Math.PI) / 180) * 0.5;
   const midZ = -rangeM * Math.cos((aspectAngleDeg * Math.PI) / 180) * 0.5;
 
+  // Place the camera behind the shooter (opposite the engagement direction) with a slight
+  // lateral offset for depth perception, looking toward the engagement midpoint.
+  // "Behind" = opposite the shooter→target direction, so for head-on (aspect=0) that's
+  // positive Z (south in Three.js); for a beam shot (aspect=90°) it's negative X (west).
+  const aspectRad = (aspectAngleDeg * Math.PI) / 180;
+  const camBehindX = -Math.sin(aspectRad) * camDist * 0.4 + Math.cos(aspectRad) * camDist * 0.25;
+  const camBehindZ =  Math.cos(aspectRad) * camDist * 0.4 + Math.sin(aspectRad) * camDist * 0.25;
+
   const initialCamPos = useMemo(() =>
-    new THREE.Vector3(-camDist, camAlt, midZ * 0.2 - rangeM * 0.1),
+    new THREE.Vector3(camBehindX, camAlt, camBehindZ),
     [simVersion] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const lookAtPt = useMemo(() =>

@@ -110,7 +110,9 @@ export default function PlaybackBar({ mobile }: Props) {
 
   function handleLaunch() {
     stopAllLoops();
-    resetSim();
+    // Don't call resetSim() — setSimFrames already clears all state and increments simVersion
+    // in a single atomic update. Calling resetSim() first caused a double simVersion bump and
+    // an intermediate empty-state render that confused the camera reset and playback.
 
     if (comparisonMode && comparisonMissileIds.length > 0) {
       // Run one simulation per comparison missile, all with the same scenario
