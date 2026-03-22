@@ -7401,7 +7401,7 @@
     "id": "9m317",
     "name": "9M317",
     "dcsName": "9M317",
-    "type": "SARH",
+    "type": "ARH",
     "source": "dcs-lua-datamine",
     "sourceFile": "_G/rockets/9M317.lua",
     "dcsVersion": "43530a30 2026-02-11 22:21:43 +1000",
@@ -7532,7 +7532,9 @@
     "dataSource": "old_api_estimated",
     "killDistance_m": 20,
     "isSAM": true,
-    "rwrSymbol": "11"
+    "rwrSymbol": "11",
+    "hasIOG": true,
+    "hasDatalink": true
   },
   {
     "id": "sa9m33",
@@ -11809,7 +11811,7 @@
     "id": "sm-6",
     "name": "SM-6",
     "dcsName": "SM_6",
-    "type": "SARH",
+    "type": "ARH",
     "source": "dcs-lua-datamine",
     "sourceFile": "_G/rockets/SM_6.lua",
     "dcsVersion": "43530a30 2026-02-11 22:21:43 +1000",
@@ -11937,7 +11939,9 @@
     "loftAngle_deg": 0.0,
     "maxSpeed_mach": 5.0,
     "maxRange_nm": 97.19,
-    "killDistance_m": 20
+    "killDistance_m": 20,
+    "hasIOG": true,
+    "hasDatalink": true
   },
   {
     "id": "matra-super-530d",
