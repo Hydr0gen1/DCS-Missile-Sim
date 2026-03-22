@@ -36,27 +36,45 @@ function closestApproachDist(
   const ex = q1x - q0x, ey = q1y - q0y, ez = q1z - q0z; // target direction
   const fx = p0x - q0x, fy = p0y - q0y, fz = p0z - q0z; // start separation
 
-  const a = dx * dx + dy * dy + dz * dz; // |d|²
-  const b = dx * ex + dy * ey + dz * ez; // d·e
-  const c = ex * ex + ey * ey + ez * ez; // |e|²
-  const d = dx * fx + dy * fy + dz * fz; // d·f
-  const e = ex * fx + ey * fy + ez * fz; // e·f
+  const a  = dx * dx + dy * dy + dz * dz; // |d|²
+  const b  = dx * ex + dy * ey + dz * ez; // d·e
+  const c  = ex * ex + ey * ey + ez * ez; // |e|²
+  const dd = dx * fx + dy * fy + dz * fz; // d·f
+  const ee = ex * fx + ey * fy + ez * fz; // e·f
 
   const denom = a * c - b * b;
 
   let s: number, t: number;
-  if (denom < 0.001) {
-    // Segments nearly parallel — use midpoint
-    s = 0.5;
-    t = (b * s - e) / Math.max(c, 0.001);
-  } else {
-    s = (b * e - c * d) / denom;
-    t = (a * e - b * d) / denom;
-  }
 
-  // Clamp both parameters to [0, 1]
-  s = Math.max(0, Math.min(1, s));
-  t = Math.max(0, Math.min(1, t));
+  if (denom < 0.001) {
+    // Segments nearly parallel
+    s = 0;
+    t = ee / Math.max(c, 0.001);
+    t = Math.max(0, Math.min(1, t));
+  } else {
+    s = (b * ee - c * dd) / denom;
+    t = (a * ee - b * dd) / denom;
+
+    // Clamp s, then re-project t for the clamped s
+    if (s < 0) {
+      s = 0;
+      t = -ee / Math.max(c, 0.001);
+    } else if (s > 1) {
+      s = 1;
+      t = (b - ee) / Math.max(c, 0.001);
+    }
+
+    // Clamp t, then re-project s for the clamped t
+    if (t < 0) {
+      t = 0;
+      s = -dd / Math.max(a, 0.001);
+      s = Math.max(0, Math.min(1, s));
+    } else if (t > 1) {
+      t = 1;
+      s = (b - dd) / Math.max(a, 0.001);
+      s = Math.max(0, Math.min(1, s));
+    }
+  }
 
   // Closest points on each segment
   const cx = (p0x + s * dx) - (q0x + t * ex);
@@ -476,6 +494,7 @@ export function runSimulation(cfg: ScenarioConfig): {
     state: MissileState;
     tFlight: number;          // time since this missile's launch
     seduced: boolean;
+    cmSeduced: boolean;       // true when seduction was caused by CM (not gimbal loss)
     seductionEndTime: number;
     lastKnownX: number;
     lastKnownY: number;
@@ -499,6 +518,7 @@ export function runSimulation(cfg: ScenarioConfig): {
       state: { ...preLaunchState, motorBurning: false, active: false },
       tFlight: 0,
       seduced: false,
+      cmSeduced: false,
       seductionEndTime: 0,
       lastKnownX: targetX,
       lastKnownY: targetY,
@@ -1156,12 +1176,14 @@ export function runSimulation(cfg: ScenarioConfig): {
           ({ ax: sAx, ay: sAy, az: sAz } = clampAcceleration(sGuidOut.ax, sGuidOut.ay, sGuidOut.az, sGLimit, slot.state.speedMs));
         }
         sAz += G; // gravity bias: universal gravity compensation for all phases
+        const sGLoad = Math.sqrt(sAx * sAx + sAy * sAy + sAz * sAz) / G;
 
-        // IR gimbal check for secondary missiles
-        if (slot.state.active && sm.type === 'IR') {
+        // IR gimbal check for secondary missiles (matches primary logic incl. imaging re-acquisition)
+        if (sm.type === 'IR') {
           const sGimbalLimitRad = sm.seekerSpec?.gimbalLimit_rad ?? 0.79;
+          const sHasImagingSeeker = sGimbalLimitRad >= 1.4;
           const sSpeed3Dg = Math.sqrt(slot.state.vx ** 2 + slot.state.vy ** 2 + slot.state.vz ** 2);
-          if (sSpeed3Dg > 10) {
+          if (slot.state.active && sSpeed3Dg > 10) {
             const sLosX = newTarget.x - slot.state.x;
             const sLosY = newTarget.y - slot.state.y;
             const sLosZ = (newTarget.altFt - slot.state.altFt) * FT_TO_M;
@@ -1170,9 +1192,31 @@ export function runSimulation(cfg: ScenarioConfig): {
               const sDot = (slot.state.vx * sLosX + slot.state.vy * sLosY + slot.state.vz * sLosZ) / (sSpeed3Dg * sLosR);
               const sObs = Math.acos(Math.max(-1, Math.min(1, sDot)));
               if (sObs > sGimbalLimitRad && !slot.seduced) {
-                slot.state = { ...slot.state, active: false };
-                slot.seduced = true;
-                slot.seductionEndTime = time + 9999;
+                if (sHasImagingSeeker) {
+                  // Grace period before lock loss
+                  if (!slot.state._seekerLostTime) {
+                    slot.state = { ...slot.state, _seekerLostTime: time };
+                  } else if (time - slot.state._seekerLostTime > 1.5) {
+                    slot.state = { ...slot.state, active: false, _seekerLostTime: undefined };
+                    slot.seduced = true;
+                    slot.cmSeduced = false;
+                    slot.seductionEndTime = time + 9999;
+                  }
+                } else {
+                  slot.state = { ...slot.state, active: false };
+                  slot.seduced = true;
+                  slot.cmSeduced = false;
+                  slot.seductionEndTime = time + 9999;
+                }
+              } else {
+                // Target back in FOV — re-acquire if imaging seeker and not CM-seduced
+                if (sHasImagingSeeker && slot.state._seekerLostTime) {
+                  slot.state = { ...slot.state, _seekerLostTime: undefined };
+                  if (slot.seduced && !slot.cmSeduced) {
+                    slot.seduced = false;
+                    slot.state = { ...slot.state, active: true };
+                  }
+                }
               }
             }
           }
@@ -1227,6 +1271,7 @@ export function runSimulation(cfg: ScenarioConfig): {
           active: slot.state.active,
           energy: sEnergyFrac,
           trail: sTrail,
+          gLoad: sGLoad,
         };
       }
     }

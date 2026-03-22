@@ -348,6 +348,15 @@ SD-10 and PL-12 use full schedule: `[12km:1.0, 18km:0.75, 30km:0.5, 48km:0.2]`
 
 Both the missile AND the target move during each 0.05 s tick. At Mach 6 combined closing speed (~2000 m/s), the target moves 12+ m per tick — testing only the target's endpoint (old algorithm) could miss direct hits when the actual CPA was mid-tick. The segment-vs-segment formulation finds the true minimum over the full parametric intersection of both paths.
 
+**Re-projection algorithm** (correct segment-vs-segment CPA): independent clamping of `s` and `t` produces wrong results near segment endpoints because the optimal `t` for a clamped `s` differs from the unclamped `t`. The fix clamps `s` first, re-projects `t` for the new `s`, then clamps `t` and re-projects `s` for the new `t`:
+1. Compute unclamped `s = (b·ee − c·dd) / denom`, `t = (a·ee − b·dd) / denom`
+2. If `s < 0`: set `s = 0`, recompute `t = −ee / c`
+3. If `s > 1`: set `s = 1`, recompute `t = (b − ee) / c`
+4. If `t < 0`: set `t = 0`, recompute `s = −dd / a`, clamp `s`
+5. If `t > 1`: set `t = 1`, recompute `s = (b − dd) / a`, clamp `s`
+
+Note: dot products `d·f` and `e·f` are named `dd` and `ee` in the code to avoid shadowing the direction vector variable names.
+
 ### 5. IR Seeker Behavior
 
 - **Pre-launch lock required**: IR missiles (`m.type === 'IR'`) cannot be fired if the target is beyond `seekerAcquisitionRange_nm`. `runSimulation()` returns a "cannot launch" result with `verdict: "Cannot launch — target beyond X seeker range"` before any simulation frames are generated.
@@ -443,6 +452,8 @@ Minimum altitude floor: 500 ft AGL (increased from 200 ft to prevent unrealistic
 - Secondary missiles share target state with lead but have independent kinematics/seekers
 - CM dispensing is gated on lead missile only (target defends against closest threat)
 - **Mixed salvo**: `ScenarioConfig.salvoMissiles` (index 0 = slot 2) overrides per-slot missile; `simStore.salvoMissileIds` holds the UI selection (null = same as primary). Each slot derives all physics parameters (thrust, drag, Cx, burn time, gLimit, seeker range, PN schedule, loft, control delay) independently from `slot.missile`.
+- **`SalvoSlot.cmSeduced`**: distinguishes countermeasure seduction from gimbal-caused lock loss on secondary missiles (mirrors the primary-missile `cmSeduced` boolean). Set to `true` on CM seduction, `false` on gimbal loss. Imaging seekers (AIM-9X, gimbalLimit ≥ 1.4 rad) on secondaries support the same 1.5 s grace period and re-acquisition logic as the primary missile.
+- **`SalvoSlot.state.gLoad`**: computed as `sqrt(ax²+ay²+az²) / G` after the gravity bias is applied, and stored on every secondary state update. Matches the primary missile's `gLoad` field so telemetry UI is consistent across all salvo slots.
 
 ### 11. CM Visual Objects (types.ts → CMObject, engagement.ts → activeCMObjects)
 
@@ -599,6 +610,8 @@ All three components `(ax, ay, az)` are produced by `proportionalNav()` and clam
 Touch handlers use `{ passive: false }` and call `e.preventDefault()` to block browser scroll/zoom. The Canvas container div has `touchAction: 'none'` for the same reason.
 
 **State refs:** `lastTouch`, `lastPinchDist`, `lastTwoFingerCenter` — all `useRef`, reset on `touchend` to zero active touches.
+
+**Distance-proportional speed** (`getSpeedScale`): all zoom/pan/WASD movement speeds are multiplied by `max(0.05, dist / 30000)` where `dist` is the camera's distance to `sceneCenterRef`. At the 30 km reference distance scale = 1.0; at 3 km (dogfight) scale = 0.1 (fine control); at 100 km scale ≈ 3.3 (faster traversal). `sceneCenterRef` is updated to the new `lookAt` point on every version reset.
 
 ### Camera Auto-Reset (simVersion)
 

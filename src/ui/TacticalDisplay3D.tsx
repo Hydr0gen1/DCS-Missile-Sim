@@ -140,8 +140,18 @@ function GroundGrid({ rangeM }: { rangeM: number }) {
 
 // ─── Free-fly camera ─────────────────────────────────────────────────────────
 
-const MOVE_SPEED = 400; // m/s base move speed
+const MOVE_SPEED = 400; // m/s base move speed (at 30 km reference distance)
 const LOOK_SENSITIVITY = 0.002;
+
+/**
+ * Returns a speed multiplier proportional to camera distance from the scene
+ * centre. At 30 km (typical BVR framing) the scale is 1.0. At 3 km (dogfight)
+ * it drops to 0.1 so fine moves don't overshoot; at 100 km it rises to ~3.3.
+ */
+function getSpeedScale(camera: THREE.Camera, sceneCenter: THREE.Vector3): number {
+  const dist = camera.position.distanceTo(sceneCenter);
+  return Math.max(0.05, dist / 30000);
+}
 
 function FlyCamera({ initialPos, lookAt, version }: {
   initialPos: THREE.Vector3;
@@ -154,6 +164,7 @@ function FlyCamera({ initialPos, lookAt, version }: {
   const yaw = useRef(0);
   const pitch = useRef(0);
   const lastVersion = useRef(-1);
+  const sceneCenterRef = useRef(lookAt.clone());
 
   // Touch state
   const lastTouch = useRef<{ x: number; y: number } | null>(null);
@@ -165,6 +176,7 @@ function FlyCamera({ initialPos, lookAt, version }: {
     if (version === lastVersion.current) return;
     lastVersion.current = version;
 
+    sceneCenterRef.current.copy(lookAt);
     camera.position.copy(initialPos);
     const dir = new THREE.Vector3().subVectors(lookAt, initialPos).normalize();
     yaw.current = Math.atan2(dir.x, -dir.z);
@@ -196,8 +208,9 @@ function FlyCamera({ initialPos, lookAt, version }: {
     };
 
     const onWheel = (e: WheelEvent) => {
+      const scale = getSpeedScale(camera, sceneCenterRef.current);
       const fwd = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
-      camera.position.addScaledVector(fwd, -e.deltaY * 20);
+      camera.position.addScaledVector(fwd, -e.deltaY * 20 * scale);
     };
 
     // ── Touch handlers ──────────────────────────────────────────────────────
@@ -243,19 +256,21 @@ function FlyCamera({ initialPos, lookAt, version }: {
 
         if (lastPinchDist.current !== null) {
           // Pinch: zoom forward/back
+          const scale = getSpeedScale(camera, sceneCenterRef.current);
           const pinchDelta = dist - lastPinchDist.current;
           const fwd = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
-          camera.position.addScaledVector(fwd, pinchDelta * MOVE_SPEED * 0.05);
+          camera.position.addScaledVector(fwd, pinchDelta * MOVE_SPEED * 0.05 * scale);
         }
 
         if (lastTwoFingerCenter.current !== null) {
           // Two-finger pan: strafe
+          const scale = getSpeedScale(camera, sceneCenterRef.current);
           const panDx = center.x - lastTwoFingerCenter.current.x;
           const panDy = center.y - lastTwoFingerCenter.current.y;
           const right = new THREE.Vector3(1, 0, 0).applyEuler(camera.rotation);
           const up = new THREE.Vector3(0, 1, 0);
-          camera.position.addScaledVector(right, -panDx * MOVE_SPEED * 0.03);
-          camera.position.addScaledVector(up,     panDy * MOVE_SPEED * 0.03);
+          camera.position.addScaledVector(right, -panDx * MOVE_SPEED * 0.03 * scale);
+          camera.position.addScaledVector(up,     panDy * MOVE_SPEED * 0.03 * scale);
         }
 
         lastPinchDist.current = dist;
@@ -300,7 +315,8 @@ function FlyCamera({ initialPos, lookAt, version }: {
   }, [camera, gl]);
 
   useFrame((_, delta) => {
-    const speed = MOVE_SPEED * (keys.current['ShiftLeft'] || keys.current['ShiftRight'] ? 8 : 1);
+    const scale = getSpeedScale(camera, sceneCenterRef.current);
+    const speed = MOVE_SPEED * scale * (keys.current['ShiftLeft'] || keys.current['ShiftRight'] ? 8 : 1);
     const fwd   = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
     const right = new THREE.Vector3(1, 0, 0).applyEuler(camera.rotation);
     const up    = new THREE.Vector3(0, 1, 0);
