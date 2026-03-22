@@ -15,7 +15,7 @@ import { DCS_CM_COEFFS } from '../data/dcsConstants';
 
 export const DT = 0.05; // seconds per physics step
 const G = 9.80665;
-const KILL_RADIUS_M = 12; // proximity fuze lethal radius (m) — increased to account for warhead fragmentation pattern
+const DEFAULT_KILL_RADIUS_M = 12; // fallback proximity fuze radius when killDistance_m is absent
 
 /**
  * Minimum 3-D distance between two line segments:
@@ -162,6 +162,7 @@ export interface EngagementResult {
   targetExitSpeedKts: number;   // target speed at end of engagement (kts)
   shooterExitSpeedKts: number;  // shooter speed at end of engagement (kts)
   detectionTimeline: DetectionEvent[];
+  killRadius: number;           // m — proximity fuze lethal radius (m.killDistance_m ?? 12)
 }
 
 export type CMEventType = 'chaff_seduced' | 'flare_seduced' | 'cm_defeated' | 'reacquired';
@@ -309,6 +310,7 @@ export function runSimulation(cfg: ScenarioConfig): {
           targetExitSpeedKts: cfg.targetSpeed,
           shooterExitSpeedKts: cfg.shooterSpeed,
           detectionTimeline: [],
+          killRadius: m.killDistance_m ?? DEFAULT_KILL_RADIUS_M,
         },
         maxRangeM: seekerMaxRange,
         minRangeM: seekerMaxRange * 0.05,
@@ -526,6 +528,8 @@ export function runSimulation(cfg: ScenarioConfig): {
       time >= s.launchTime ? s.state : { ...lead, x: shooterState.x, y: shooterState.y, motorBurning: false, active: false, trail: [], energy: 0, speedMs: 0, vx: 0, vy: 0, vz: 0 }
     )];
   }
+
+  const killRadius = m.killDistance_m ?? DEFAULT_KILL_RADIUS_M;
 
   while (time < maxTime) {
     // --- Seeker activation (before stepAircraft so detection can gate maneuver) ---
@@ -1018,7 +1022,7 @@ export function runSimulation(cfg: ScenarioConfig): {
       targetState.x, targetState.y, targetState.altFt * FT_TO_M,     // target start (pre-step)
       newTarget.x, newTarget.y, newTarget.altFt * FT_TO_M,            // target end (post-step)
     );
-    if (cpa < KILL_RADIUS_M) {
+    if (cpa < killRadius) {
       hitDetected = true;
       const fdxH = shooterState.x - newTarget.x;
       const fdyH = shooterState.y - newTarget.y;
@@ -1332,7 +1336,8 @@ export function runSimulation(cfg: ScenarioConfig): {
           targetState.x, targetState.y, targetState.altFt * FT_TO_M, // target start
           newTarget.x, newTarget.y, newTarget.altFt * FT_TO_M,       // target end
         );
-        if (sCpa < KILL_RADIUS_M) {
+        const sKillRadius = slot.missile.killDistance_m ?? DEFAULT_KILL_RADIUS_M;
+        if (sCpa < sKillRadius) {
           slot.done = true;
         }
         if ((sNewSpeed < 50 && slot.tFlight > 3.0) || (sNewAlt <= 0 && sNewVz < 0)) {
@@ -1419,6 +1424,7 @@ export function runSimulation(cfg: ScenarioConfig): {
     targetExitSpeedKts: targetState.speedMs / 0.514444,
     shooterExitSpeedKts: shooterState.speedMs / 0.514444,
     detectionTimeline,
+    killRadius,
   };
 
   return { frames, result, maxRangeM, minRangeM, nezM, shooterStartX: shooterX, shooterStartY: shooterY };

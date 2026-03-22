@@ -77,6 +77,10 @@ export interface MissileData {
    */
   hasDatalink?: boolean;
 
+  /** DCS KillDistance: proximity fuze lethal radius in meters.
+   *  SAMs: 10–60m; large ARH/SARH: 12–20m; IR/dogfight: 5–8m; MANPADs: 1–3m. */
+  killDistance_m?: number;
+
   /** True if this is a synthetic test round, not a real weapon */
   isSynthetic?: boolean;
 

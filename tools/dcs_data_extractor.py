@@ -468,6 +468,8 @@ def extract_missile(
         "loftAngle_deg": loft.get("elevationDeg"),
         "maxSpeed_mach": _safe(params.get("Mach_max")),
         "maxRange_nm": _m_to_nm(max_range_m),
+        # DCS KillDistance: proximity fuze lethal radius (m)
+        "killDistance_m": kill_dist if kill_dist else None,
     }
 
     return entry
