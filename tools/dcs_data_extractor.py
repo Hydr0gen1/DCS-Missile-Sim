@@ -271,15 +271,21 @@ def extract_missile(
     }
 
     # ── Guidance — PN schedule ────────────────────────────────────────────────
+    # PN_gain is the terminal (close-range) proportional navigation constant.
+    # PN_coeffs provides a range-dependent schedule for mid-course guidance.
+    # When both are present, prepend a terminal entry {range_m:0, N:pn_gain}
+    # so the missile steers hard in the last few km regardless of the schedule.
+    pn_gain = _safe(params.get("PN_gain"))
     pn_schedule = None
     pn_coeffs = get_pn_coeffs(data)
     if pn_coeffs:
         pn_schedule = [{"range_m": r, "N": n} for r, n in pn_coeffs]
-    else:
-        # Fall back to single PN_gain
-        pn_gain = _safe(params.get("PN_gain"))
         if pn_gain:
-            pn_schedule = [{"range_m": 0, "N": pn_gain}]
+            # Prepend terminal entry if not already present (first entry has range_m=0)
+            if pn_schedule[0]["range_m"] != 0:
+                pn_schedule = [{"range_m": 0, "N": pn_gain}] + pn_schedule
+    elif pn_gain:
+        pn_schedule = [{"range_m": 0, "N": pn_gain}]
 
     # ── Guidance — Autopilot ─────────────────────────────────────────────────
     autopilot_raw = get_autopilot_new_api(data)
@@ -450,9 +456,14 @@ def extract_missile(
         "dragCoefficient": cx.get("k0"),  # subsonic Cx0 (used as Cd baseline in drag formula)
         "referenceArea_m2": ref_area,     # DCS reference area for drag formula (m²)
         "gLimit": _safe(params.get("Nr_max")),
-        "guidanceNav": (pn_schedule[0]["N"] if pn_schedule else None) or 4.0,
+        # guidanceNav = terminal PN gain (PN_gain when available, else first schedule entry)
+        "guidanceNav": pn_gain or (pn_schedule[0]["N"] if pn_schedule else None) or 4.0,
+        # Seeker activation range: prefer active_radar_lock_dist (pitbull trigger) over the
+        # raw seeker detection capability (acquisitionRange_m), which is typically much larger.
         "seekerAcquisitionRange_nm": _m_to_nm(
-            triggers.get("seekerActivation_m") or seeker_spec.get("acquisitionRange_m")
+            _none_if_inf(_safe(params.get("active_radar_lock_dist")))
+            or triggers.get("seekerActivation_m")
+            or seeker_spec.get("acquisitionRange_m")
         ),
         "loftAngle_deg": loft.get("elevationDeg"),
         "maxSpeed_mach": _safe(params.get("Mach_max")),

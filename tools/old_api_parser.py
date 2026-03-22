@@ -190,15 +190,23 @@ def _derive_cx_from_fm(fm: dict | None, cx_coeff_list: list[float] | None) -> di
     """
     Extract 5-coeff Cx from `fm.cx_coeff = { k0, k1, k2, k3, k4 }`.
     Returns {'k0':..., 'k1':..., 'k2':..., 'k3':..., 'k4':...} or None.
+
+    IMPORTANT: old-API `fm.cx_coeff` uses a completely different parameterisation
+    from the new ModelData Cx polynomial.  In the old format values of 0.5–1.5 are
+    normal and DO NOT represent subsonic drag.  ModelData k0 is always < 0.15 for
+    any real missile.  Reject old-API coefficients whose first value looks like the
+    old format (k0 >= 0.15) so the caller falls through to _cx_from_cx_pil instead.
     """
     if cx_coeff_list and len(cx_coeff_list) >= 5:
-        return {
-            'k0': cx_coeff_list[0],
-            'k1': cx_coeff_list[1],
-            'k2': cx_coeff_list[2],
-            'k3': cx_coeff_list[3],
-            'k4': cx_coeff_list[4],
-        }
+        if cx_coeff_list[0] < 0.15:  # ModelData-compatible: accept
+            return {
+                'k0': cx_coeff_list[0],
+                'k1': cx_coeff_list[1],
+                'k2': cx_coeff_list[2],
+                'k3': cx_coeff_list[3],
+                'k4': cx_coeff_list[4],
+            }
+        # Old-API parameterisation — reject and fall through to _cx_from_cx_pil
     return None
 
 

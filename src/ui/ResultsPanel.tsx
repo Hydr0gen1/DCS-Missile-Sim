@@ -85,7 +85,7 @@ export default function ResultsPanel({ mobile }: Props) {
       {simResult && (
         <div style={styles.section}>
           <div style={styles.sectionTitle}>RESULT</div>
-          <div style={{ ...styles.verdict, color: verdictColor(simResult.pk) }}>
+          <div style={{ ...styles.verdict, color: verdictColor(simResult.pk, simResult.verdict) }}>
             {simResult.verdict}
           </div>
           <Row label="Pk" value={
@@ -127,7 +127,9 @@ function pkColor(pk: number): string {
   return T.danger;
 }
 
-function verdictColor(pk: number): string {
+function verdictColor(pk: number, verdict?: string): string {
+  if (verdict?.startsWith('Decoyed')) return '#ff8800';
+  if (verdict?.startsWith('No launch')) return T.textDim;
   if (pk >= 0.8) return T.success;
   if (pk >= 0.5) return T.warning;
   return T.danger;

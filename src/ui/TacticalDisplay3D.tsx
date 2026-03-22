@@ -514,11 +514,37 @@ function SceneContent() {
 
 // ─── HUD overlay ─────────────────────────────────────────────────────────────
 
-function HUDOverlay() {
+function HUDOverlay({ mobile }: { mobile?: boolean }) {
   const { simFrames, currentFrameIdx, simStatus, simResult } = useSimStore();
   const frame = simFrames[currentFrameIdx];
 
   const isDone = simStatus === 'hit' || simStatus === 'miss';
+  const msl = frame ? (frame.missiles?.[0] ?? frame.missile) : null;
+
+  if (mobile) {
+    // Compact 1-row strip along the top — keeps the viewport free on small screens
+    return (
+      <div style={hud.mobileStrip}>
+        {frame ? (
+          <>
+            <span><span style={hud.dim}>T+</span>{frame.time.toFixed(1)}<span style={hud.unit}>s</span></span>
+            <span><span style={hud.dim}> RNG </span>{(frame.range * M_TO_NM).toFixed(1)}<span style={hud.unit}>nm</span></span>
+            <span><span style={hud.dim}> NRG </span>
+              <span style={{ color: energyColor(msl!.energy) }}>{(msl!.energy * 100).toFixed(0)}</span>
+              <span style={hud.unit}>%</span>
+            </span>
+            {isDone && simResult && (
+              <span style={{ color: simStatus === 'hit' ? '#00ff80' : '#ff4444', marginLeft: 6 }}>
+                {simResult.verdict}
+              </span>
+            )}
+          </>
+        ) : (
+          <span style={{ color: '#334433' }}>AWAITING SIM</span>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div style={hud.overlay}>
@@ -579,6 +605,26 @@ const hud: Record<string, React.CSSProperties> = {
     lineHeight: 1.8,
     backdropFilter: 'blur(2px)',
   },
+  // Compact single-row strip for mobile — sits at top, keeps the 3D view free
+  mobileStrip: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 28,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '0 8px',
+    background: 'rgba(2,6,2,0.82)',
+    borderBottom: '1px solid #1a3a1a',
+    fontFamily: 'Share Tech Mono, monospace',
+    fontSize: 10,
+    color: '#00ff80',
+    pointerEvents: 'none',
+    backdropFilter: 'blur(2px)',
+    overflow: 'hidden',
+  },
   row: { display: 'block' },
   dim: { color: '#336633' },
   unit: { color: '#557755', fontSize: 9 },
@@ -630,8 +676,8 @@ export default function TacticalDisplay3D({ mobile }: TacticalDisplay3DProps) {
       >
         <SceneContent />
       </Canvas>
-      <HUDOverlay />
-      <CompassOverlay />
+      <HUDOverlay mobile={mobile} />
+      {!mobile && <CompassOverlay />}
     </div>
   );
 }
