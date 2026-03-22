@@ -33,6 +33,7 @@ input[type="range"] {
   background: #1a3a1a;
   outline: none;
   cursor: pointer;
+  touch-action: none;
 }
 input[type="range"]::-webkit-slider-thumb {
   appearance: none;
@@ -40,6 +41,17 @@ input[type="range"]::-webkit-slider-thumb {
   height: 12px;
   background: #00aa44;
   cursor: pointer;
+  border-radius: 50%;
+}
+@media (max-width: 768px) {
+  input[type="range"] {
+    height: 8px;
+    padding: 12px 0;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    width: 28px;
+    height: 28px;
+  }
 }
 
 button:hover {

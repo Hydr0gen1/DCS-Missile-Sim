@@ -264,7 +264,7 @@ export default function SetupPanel({ mobile }: Props) {
           DOGFIGHT PRESET
         </button>
         {label(`Range: ${rangeNm.toFixed(1)} nm`, 'Initial range between shooter and target at launch')}
-        <input type="range" min={0.5} max={80} step={0.5} value={rangeNm}
+        <input type="range" min={0.5} max={200} step={0.5} value={rangeNm}
           onChange={(e) => setScenario({ rangeNm: +e.target.value })}
           style={styles.slider} />
 
