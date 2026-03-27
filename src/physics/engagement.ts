@@ -1205,7 +1205,7 @@ export function runSimulation(cfg: ScenarioConfig): {
           slot.state = { ...slot.state, active: true };
         }
 
-        if (!slot.seduced && slot.state.active) {
+        if (!slot.seduced && (datalinkActive || slot.state.active)) {
           slot.lastKnownX = newTarget.x;
           slot.lastKnownY = newTarget.y;
         }
@@ -1229,8 +1229,9 @@ export function runSimulation(cfg: ScenarioConfig): {
 
         const sMz = slot.state.altFt * FT_TO_M;
         const sTz = newTarget.altFt * FT_TO_M;
-        const sGuidX = slot.seduced ? slot.lastKnownX : newTarget.x;
-        const sGuidY = slot.seduced ? slot.lastKnownY : newTarget.y;
+        const sUseDeadReckoning = slot.seduced || (!datalinkActive && !slot.state.active);
+        const sGuidX = sUseDeadReckoning ? slot.lastKnownX : newTarget.x;
+        const sGuidY = sUseDeadReckoning ? slot.lastKnownY : newTarget.y;
         const sHorizDist = Math.hypot(sGuidX - slot.state.x, sGuidY - slot.state.y);
 
         // Must be computed before computeLoftAltitude (also used by guidance block below).
@@ -1247,9 +1248,9 @@ export function runSimulation(cfg: ScenarioConfig): {
           mx: slot.state.x, my: slot.state.y, mz: sMz,
           mvx: slot.state.vx, mvy: slot.state.vy, mvz: slot.state.vz,
           tx: sGuidX, ty: sGuidY, tz: sTzGuide,
-          tvx: slot.seduced ? 0 : newTarget.vx,
-          tvy: slot.seduced ? 0 : newTarget.vy,
-          tvz: slot.seduced ? 0 : (newTarget.vzMs ?? 0),
+          tvx: sUseDeadReckoning ? 0 : newTarget.vx,
+          tvy: sUseDeadReckoning ? 0 : newTarget.vy,
+          tvz: sUseDeadReckoning ? 0 : (newTarget.vzMs ?? 0),
           navConst: getPNGain(sRange, sPnSchedule, sNavN),
         });
 

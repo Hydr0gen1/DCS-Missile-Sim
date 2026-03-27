@@ -555,10 +555,10 @@
       "guidanceEfficiency": 72000.0
     },
     "loft": {
-      "triggerRange_m": 40000.0,
-      "descentRange_m": 30000.0,
-      "elevationSin": 0.17,
-      "elevationDeg": 9.8
+      "triggerRange_m": 25000.0,
+      "descentRange_m": 15000.0,
+      "elevationSin": 0.5,
+      "elevationDeg": 30.0
     },
     "triggers": {
       "seekerActivation_m": 14000.0,
@@ -588,7 +588,7 @@
     },
     "performance": {
       "maxSpeed_mach": 4.0,
-      "maxRange_nm": 97.19,
+      "maxRange_nm": 75.0,
       "maxRange_head_on_nm": 64.79,
       "maxRange_tail_nm": 24.84,
       "gLimit": 18.0,
@@ -605,9 +605,9 @@
     "gLimit": 18.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 10.0,
-    "loftAngle_deg": 9.8,
+    "loftAngle_deg": 30.0,
     "maxSpeed_mach": 4.0,
-    "maxRange_nm": 97.19,
+    "maxRange_nm": 75.0,
     "killDistance_m": 15,
     "lifeTime_s": 200
   },
@@ -694,10 +694,10 @@
       "guidanceEfficiency": 72000.0
     },
     "loft": {
-      "triggerRange_m": 40000.0,
-      "descentRange_m": 30000.0,
-      "elevationSin": 0.17,
-      "elevationDeg": 9.8
+      "triggerRange_m": 25000.0,
+      "descentRange_m": 15000.0,
+      "elevationSin": 0.5,
+      "elevationDeg": 30.0
     },
     "triggers": {
       "seekerActivation_m": 14000.0,
@@ -727,7 +727,7 @@
     },
     "performance": {
       "maxSpeed_mach": 4.0,
-      "maxRange_nm": 97.19,
+      "maxRange_nm": 75.0,
       "maxRange_head_on_nm": 64.79,
       "maxRange_tail_nm": 24.84,
       "gLimit": 18.0,
@@ -744,9 +744,9 @@
     "gLimit": 18.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 10.0,
-    "loftAngle_deg": 9.8,
+    "loftAngle_deg": 30.0,
     "maxSpeed_mach": 4.0,
-    "maxRange_nm": 97.19,
+    "maxRange_nm": 75.0,
     "killDistance_m": 15,
     "lifeTime_s": 200
   },
@@ -956,10 +956,10 @@
       "guidanceEfficiency": 72000.0
     },
     "loft": {
-      "triggerRange_m": 40000.0,
-      "descentRange_m": 30000.0,
-      "elevationSin": 0.17,
-      "elevationDeg": 9.8
+      "triggerRange_m": 25000.0,
+      "descentRange_m": 15000.0,
+      "elevationSin": 0.5,
+      "elevationDeg": 30.0
     },
     "triggers": {
       "seekerActivation_m": 14000.0,
@@ -989,7 +989,7 @@
     },
     "performance": {
       "maxSpeed_mach": 4.0,
-      "maxRange_nm": 97.19,
+      "maxRange_nm": 75.0,
       "maxRange_head_on_nm": 64.79,
       "maxRange_tail_nm": 24.84,
       "gLimit": 18.0,
@@ -1006,9 +1006,9 @@
     "gLimit": 18.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 10.0,
-    "loftAngle_deg": 9.8,
+    "loftAngle_deg": 30.0,
     "maxSpeed_mach": 4.0,
-    "maxRange_nm": 97.19,
+    "maxRange_nm": 75.0,
     "killDistance_m": 15,
     "lifeTime_s": 200
   },
@@ -1095,10 +1095,10 @@
       "guidanceEfficiency": 72000.0
     },
     "loft": {
-      "triggerRange_m": 40000.0,
-      "descentRange_m": 30000.0,
-      "elevationSin": 0.17,
-      "elevationDeg": 9.8
+      "triggerRange_m": 25000.0,
+      "descentRange_m": 15000.0,
+      "elevationSin": 0.5,
+      "elevationDeg": 30.0
     },
     "triggers": {
       "seekerActivation_m": 14000.0,
@@ -1128,7 +1128,7 @@
     },
     "performance": {
       "maxSpeed_mach": 4.0,
-      "maxRange_nm": 97.19,
+      "maxRange_nm": 75.0,
       "maxRange_head_on_nm": 64.79,
       "maxRange_tail_nm": 24.84,
       "gLimit": 18.0,
@@ -1145,9 +1145,9 @@
     "gLimit": 18.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 10.0,
-    "loftAngle_deg": 9.8,
+    "loftAngle_deg": 30.0,
     "maxSpeed_mach": 4.0,
-    "maxRange_nm": 97.19,
+    "maxRange_nm": 75.0,
     "killDistance_m": 15,
     "lifeTime_s": 200
   },
@@ -8963,7 +8963,7 @@
     "gLimit": 25.0,
     "guidanceNav": 2.0,
     "seekerAcquisitionRange_nm": 10.8,
-    "loftAngle_deg": 5.7,
+    "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.2,
     "maxRange_nm": 27.0,
     "killDistance_m": 12,
@@ -9109,7 +9109,7 @@
     "gLimit": 25.0,
     "guidanceNav": 2.0,
     "seekerAcquisitionRange_nm": 10.8,
-    "loftAngle_deg": 5.7,
+    "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.2,
     "maxRange_nm": 27.0,
     "killDistance_m": 12,
@@ -9255,7 +9255,7 @@
     "gLimit": 25.0,
     "guidanceNav": 2.0,
     "seekerAcquisitionRange_nm": 10.8,
-    "loftAngle_deg": 5.7,
+    "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.2,
     "maxRange_nm": 27.0,
     "killDistance_m": 12,
@@ -9524,7 +9524,7 @@
     "gLimit": 25.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 29.7,
-    "loftAngle_deg": 38.3,
+    "loftAngle_deg": 0.0,
     "maxSpeed_mach": 8.6,
     "maxRange_nm": 80.99,
     "killDistance_m": 25,
@@ -9667,7 +9667,7 @@
     "gLimit": 25.0,
     "guidanceNav": 3.0,
     "seekerAcquisitionRange_nm": 16.2,
-    "loftAngle_deg": 44.4,
+    "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.5,
     "maxRange_nm": 24.3,
     "killDistance_m": 15,
@@ -11058,7 +11058,7 @@
     "gLimit": 32.0,
     "guidanceNav": 4.0,
     "seekerAcquisitionRange_nm": 7.56,
-    "loftAngle_deg": 9.8,
+    "loftAngle_deg": 0.0,
     "maxSpeed_mach": 3.0,
     "maxRange_nm": 14.85,
     "killDistance_m": 12,
